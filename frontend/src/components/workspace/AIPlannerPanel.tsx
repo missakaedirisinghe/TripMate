@@ -4,35 +4,86 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, MapPin, Wallet, ArrowRight, Activity } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { recommendApi, type RecommendationResult } from "@/lib/api";
 
 interface AIPlannerPanelProps {
     isOpen: boolean;
     onClose: () => void;
+    tripId?: string;
 }
 
-export function AIPlannerPanel({ isOpen, onClose }: AIPlannerPanelProps) {
+export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps) {
     const [query, setQuery] = useState("");
     const [isGenerating, setIsGenerating] = useState(false);
-    const [result, setResult] = useState<null | any>(null);
+    const [result, setResult] = useState<null | {
+        feasibility: string;
+        feasibilityColor: string;
+        budgetEstimate: string;
+        route: RecommendationResult["recommended_route"];
+    }>(null);
+    const [error, setError] = useState("");
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (!query) return;
         setIsGenerating(true);
-        // Simulate NLP model inference
-        setTimeout(() => {
+        setError("");
+
+        // Parse activities from natural language query
+        const activityKeywords = ["surfing", "hiking", "diving", "snorkeling", "whale watching",
+            "cultural", "temple", "wildlife", "safari", "beach", "waterfall", "camping", "cycling"];
+        const activities = activityKeywords.filter(a => query.toLowerCase().includes(a));
+        if (activities.length === 0) activities.push("sightseeing"); // fallback
+
+        // Parse destination hints
+        const destKeywords = ["Ella", "Mirissa", "Sigiriya", "Yala", "Arugam Bay", "Kandy", "Galle", "Nuwara Eliya", "Trincomalee"];
+        const bucketList = destKeywords.filter(d => query.toLowerCase().includes(d.toLowerCase()));
+
+        try {
+            // Try real recommendation API
+            const recResult = await recommendApi.getRecommendations({ activities, bucket_list: bucketList });
+
+            // Also get cost estimation
+            const costResult = await recommendApi.estimateCost({
+                destination: bucketList[0] || "Sri Lanka",
+                duration_days: recResult.route_count || 3,
+                num_travelers: 2,
+                vehicle_type: "car",
+                accommodation_type: "mid-range",
+            });
+
             setResult({
                 feasibility: "High",
                 feasibilityColor: "text-green-500",
-                budgetEstimate: "LKR 45,000",
-                itinerary: [
-                    { day: 1, title: "Central Highlands Arrival", desc: "Train to Ella, Nine Arch Bridge" },
-                    { day: 2, title: "Nature & Hiking", desc: "Little Adam's Peak, Ravana Falls" },
-                    { day: 3, title: "Cultural Transition", desc: "Travel to Kandy, Temple of the Tooth" },
-                ]
+                budgetEstimate: `LKR ${costResult.estimation.total.toLocaleString()}`,
+                route: recResult.recommended_route,
             });
+        } catch {
+            // Fallback: use cost estimation only (ML model may not be loaded)
+            try {
+                const costResult = await recommendApi.estimateCost({
+                    destination: bucketList[0] || "Sri Lanka",
+                    duration_days: 3,
+                    num_travelers: 2,
+                    vehicle_type: "car",
+                    accommodation_type: "mid-range",
+                });
+
+                setResult({
+                    feasibility: "Medium",
+                    feasibilityColor: "text-yellow-500",
+                    budgetEstimate: `LKR ${costResult.estimation.total.toLocaleString()}`,
+                    route: bucketList.map((name, i) => ({
+                        name,
+                        lat: 7.0 + i * 0.5,
+                        lng: 80.0 + i * 0.3,
+                    })),
+                });
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : "AI service is temporarily unavailable");
+            }
+        } finally {
             setIsGenerating(false);
-        }, 1500);
+        }
     };
 
     return (
@@ -94,10 +145,16 @@ export function AIPlannerPanel({ isOpen, onClose }: AIPlannerPanelProps) {
                                         {isGenerating ? "Analyzing Patterns..." : "Generate Itinerary"}
                                         {!isGenerating && <ArrowRight className="w-4 h-4" />}
                                     </span>
-                                    {/* Futuristic Button Glow effect */}
                                     <div className="absolute inset-0 bg-gradient-to-r from-primary via-secondary to-primary opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                                 </Button>
                             </div>
+
+                            {/* Error */}
+                            {error && (
+                                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                                    {error}
+                                </div>
+                            )}
 
                             {/* Loading State */}
                             {isGenerating && (
@@ -134,17 +191,17 @@ export function AIPlannerPanel({ isOpen, onClose }: AIPlannerPanelProps) {
                                         </div>
                                     </div>
 
-                                    {/* Structued Output */}
+                                    {/* Route */}
                                     <div>
                                         <h3 className="text-sm font-bold tracking-wider uppercase text-foreground/50 mb-4 flex items-center gap-2">
                                             <MapPin className="w-4 h-4" /> Suggested Route
                                         </h3>
                                         <div className="space-y-4 relative pl-4 border-l-2 border-border/50 ml-2">
-                                            {result.itinerary.map((item: any, idx: number) => (
+                                            {result.route.map((place, idx) => (
                                                 <div key={idx} className="relative">
                                                     <div className="absolute -left-[25px] top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
-                                                    <h4 className="font-bold text-foreground mb-1">Day {item.day}: {item.title}</h4>
-                                                    <p className="text-sm text-foreground/70">{item.desc}</p>
+                                                    <h4 className="font-bold text-foreground mb-1">Stop {idx + 1}: {place.name}</h4>
+                                                    {place.rating && <p className="text-sm text-foreground/70">Rating: {place.rating}/5</p>}
                                                 </div>
                                             ))}
                                         </div>

@@ -3,13 +3,25 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-    Menu, X, Compass, Home, Map, PlusCircle, Settings, Bell, Search, User
+    Menu, X, Compass, Home, Map, PlusCircle, Settings, Bell, Search, User, LogOut
 } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/Input";
+import { useAuth } from "@/lib/auth-context";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(true);
+    const { user, logout } = useAuth();
+
+    /** Derive initials from the real user name, fallback to "U" */
+    const initials = user?.name
+        ? user.name
+            .split(" ")
+            .map((w) => w[0])
+            .join("")
+            .toUpperCase()
+            .slice(0, 2)
+        : "U";
 
     const navItems = [
         { icon: Home, label: "Dashboard", href: "/dashboard" },
@@ -51,12 +63,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                         <div className="p-6 border-t border-border">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-white font-bold">
-                                    JS
+                                    {initials}
                                 </div>
-                                <div>
-                                    <p className="text-sm font-semibold">Jane Smith</p>
-                                    <p className="text-xs text-foreground/50">Pro Explorer</p>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold truncate">{user?.name || "Explorer"}</p>
+                                    <p className="text-xs text-foreground/50 truncate">{user?.email || ""}</p>
                                 </div>
+                                <button
+                                    onClick={logout}
+                                    className="p-1.5 rounded-lg hover:bg-surface/80 text-foreground/40 hover:text-foreground transition-colors"
+                                    title="Logout"
+                                >
+                                    <LogOut className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
                     </motion.aside>

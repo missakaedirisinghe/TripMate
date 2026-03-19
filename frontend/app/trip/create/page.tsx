@@ -7,9 +7,21 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { motion } from "framer-motion";
 import { MapPin, Calendar, Wallet, Users, Compass, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { tripsApi } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 export default function CreateTripPage() {
     const [tripType, setTripType] = useState<string | null>(null);
+    const [destination, setDestination] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+    const [budget, setBudget] = useState("");
+    const [inviteEmail, setInviteEmail] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const router = useRouter();
+    const { user } = useAuth();
 
     const tripTypes = [
         { id: "beach", label: "Beach Vibes", icon: "🌊" },
@@ -21,6 +33,42 @@ export default function CreateTripPage() {
     const popularDestinations = [
         "Ella", "Mirissa", "Sigiriya", "Yala National Park", "Arugam Bay", "Kandy", "Galle"
     ];
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!destination) {
+            setError("Please select a destination");
+            return;
+        }
+        setError("");
+        setLoading(true);
+
+        try {
+            const res = await tripsApi.create({
+                title: `${destination} ${tripType ? tripTypes.find(t => t.id === tripType)?.label : "Trip"}`,
+                destination,
+                start_date: startDate || undefined,
+                end_date: endDate || undefined,
+                budget_limit: budget ? parseFloat(budget) : undefined,
+                trip_type: tripType || undefined,
+            });
+
+            // Invite member if email was entered
+            if (inviteEmail.trim()) {
+                try {
+                    await tripsApi.invite(res.trip.id, inviteEmail.trim());
+                } catch {
+                    // Invitation may fail silently — user may not exist yet
+                }
+            }
+
+            router.push(`/trip/${res.trip.id}`);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to create trip");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <DashboardLayout>
@@ -40,7 +88,16 @@ export default function CreateTripPage() {
                     {/* Main Form Area */}
                     <div className="lg:col-span-8 space-y-6">
                         <Card className="p-6 md:p-8 border-border">
-                            <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
+                            <form className="space-y-8" onSubmit={handleSubmit}>
+                                {error && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
+                                    >
+                                        {error}
+                                    </motion.div>
+                                )}
 
                                 {/* Destination */}
                                 <div className="space-y-4">
@@ -48,7 +105,11 @@ export default function CreateTripPage() {
                                         <MapPin className="text-primary" /> Where to?
                                     </h3>
                                     <div className="relative">
-                                        <select defaultValue="" className="flex h-12 w-full rounded-2xl border border-border bg-surface/50 px-4 py-2 text-sm appearance-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-all">
+                                        <select
+                                            value={destination}
+                                            onChange={(e) => setDestination(e.target.value)}
+                                            className="flex h-12 w-full rounded-2xl border border-border bg-surface/50 px-4 py-2 text-sm appearance-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-all"
+                                        >
                                             <option value="" disabled>Select a Sri Lankan Destination</option>
                                             {popularDestinations.map(dest => (
                                                 <option key={dest} value={dest}>{dest}</option>
@@ -68,11 +129,21 @@ export default function CreateTripPage() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <label className="text-sm text-foreground/60 px-1">Start Date</label>
-                                            <Input type="date" className="h-12 bg-surface/50" />
+                                            <Input
+                                                type="date"
+                                                className="h-12 bg-surface/50"
+                                                value={startDate}
+                                                onChange={(e) => setStartDate(e.target.value)}
+                                            />
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-sm text-foreground/60 px-1">End Date</label>
-                                            <Input type="date" className="h-12 bg-surface/50" />
+                                            <Input
+                                                type="date"
+                                                className="h-12 bg-surface/50"
+                                                value={endDate}
+                                                onChange={(e) => setEndDate(e.target.value)}
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -101,8 +172,8 @@ export default function CreateTripPage() {
                                 </div>
 
                                 <div className="pt-4">
-                                    <Button size="lg" className="w-full text-lg h-14">
-                                        Initialize Workspace
+                                    <Button size="lg" className="w-full text-lg h-14" disabled={loading}>
+                                        {loading ? "Creating..." : "Initialize Workspace"}
                                     </Button>
                                 </div>
                             </form>
@@ -125,7 +196,13 @@ export default function CreateTripPage() {
                                 </p>
                                 <div className="relative">
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-foreground/50 font-medium">Rs.</span>
-                                    <Input type="number" placeholder="100000" className="pl-12 h-12 text-lg font-semibold" />
+                                    <Input
+                                        type="number"
+                                        placeholder="100000"
+                                        className="pl-12 h-12 text-lg font-semibold"
+                                        value={budget}
+                                        onChange={(e) => setBudget(e.target.value)}
+                                    />
                                 </div>
                             </Card>
                         </motion.div>
@@ -143,10 +220,13 @@ export default function CreateTripPage() {
                                     Add their emails. They'll get an invite link to join this workspace.
                                 </p>
                                 <div className="space-y-3">
-                                    <Input type="email" placeholder="friend@example.com" className="h-11" />
-                                    <Button variant="secondary" className="w-full gap-2">
-                                        <Users className="w-4 h-4" /> Send Invites
-                                    </Button>
+                                    <Input
+                                        type="email"
+                                        placeholder="friend@example.com"
+                                        className="h-11"
+                                        value={inviteEmail}
+                                        onChange={(e) => setInviteEmail(e.target.value)}
+                                    />
                                 </div>
                             </Card>
                         </motion.div>

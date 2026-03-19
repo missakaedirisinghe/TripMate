@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { MapPin, Users, Wallet, ArrowRight, Compass } from "lucide-react";
-import Image from "next/image";
+import { MapPin, Users, Wallet, ArrowRight, Compass, LayoutDashboard } from "lucide-react";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -19,27 +21,77 @@ const staggerContainer = {
   },
 };
 
+/** Fallback destinations shown if the backend is unreachable. */
+const FALLBACK_DESTINATIONS = [
+  { name: "Ella", tags: "Nature • Hiking", budget: "LKR 45,000", image: "https://images.unsplash.com/photo-1620619767323-b95a89183081?q=80&w=800&auto=format&fit=crop" },
+  { name: "Mirissa", tags: "Beach • Surfing", budget: "LKR 60,000", image: "https://images.unsplash.com/photo-1577717903315-1691ae25ab3f?q=80&w=800&auto=format&fit=crop" },
+  { name: "Yala", tags: "Wildlife • Safari", budget: "LKR 85,000", image: "https://images.unsplash.com/photo-1544654803-b6d2a45d0af9?q=80&w=800&auto=format&fit=crop" },
+];
+
+interface Destination {
+  name: string;
+  tags: string;
+  budget: string;
+  image: string;
+}
+
 export default function LandingPage() {
+  const { user, loading } = useAuth();
+  const isLoggedIn = !loading && !!user;
+  const [destinations, setDestinations] = useState<Destination[]>(FALLBACK_DESTINATIONS);
+
+  useEffect(() => {
+    const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+
+    fetch(`${API}/destinations`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.destinations && data.destinations.length > 0) {
+          const mapped = data.destinations.slice(0, 3).map((d: Record<string, unknown>) => ({
+            name: d.name || "Sri Lanka",
+            tags: (d.category as string) || "Explore",
+            budget: `LKR ${((d.avg_budget as number) || 50000).toLocaleString()}`,
+            image: (d.image as string) || FALLBACK_DESTINATIONS[0].image,
+          }));
+          setDestinations(mapped);
+        }
+      })
+      .catch(() => {
+        // Keep fallback destinations — backend may not serve /destinations yet
+      });
+  }, []);
+
   return (
     <main className="min-h-screen bg-background">
-      {/* Navbar (Simplified for Landing) */}
+      {/* Navbar */}
       <nav className="absolute top-0 w-full z-50 px-6 py-6 flex justify-between items-center">
         <div className="flex items-center gap-2 text-white">
           <Compass className="w-8 h-8 text-primary" />
           <span className="text-xl font-bold tracking-tight">TripMate</span>
         </div>
         <div className="flex gap-4">
-          <Button variant="ghost" className="text-white hover:text-white/80">Log in</Button>
-          <Button variant="primary">Get Started</Button>
+          {isLoggedIn ? (
+            <Link href="/dashboard">
+              <Button variant="primary" className="gap-2">
+                <LayoutDashboard className="w-4 h-4" /> Dashboard
+              </Button>
+            </Link>
+          ) : (
+            <>
+              <Link href="/login">
+                <Button variant="ghost" className="text-white hover:text-white/80">Log in</Button>
+              </Link>
+              <Link href="/register">
+                <Button variant="primary">Get Started</Button>
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 
       {/* Hero Section */}
       <section className="relative h-screen w-full flex items-center justify-center overflow-hidden">
-        {/* Background Overlay */}
         <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/40 via-black/20 to-background" />
-
-        {/* Background Image (Sri Lanka Landscape Placeholder) */}
         <div
           className="absolute inset-0 z-0 bg-cover bg-center"
           style={{ backgroundImage: "url('/assets/images/hero-bg.png')" }}
@@ -66,29 +118,39 @@ export default function LandingPage() {
           </motion.p>
 
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" className="w-full sm:w-auto text-lg gap-2">
-              Start Planning <ArrowRight className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="lg" className="w-full sm:w-auto text-lg bg-white/10 text-white backdrop-blur-md hover:bg-white/20">
-              Explore Destinations
-            </Button>
+            {isLoggedIn ? (
+              <Link href="/dashboard">
+                <Button size="lg" className="w-full sm:w-auto text-lg gap-2">
+                  Go to Dashboard <ArrowRight className="w-5 h-5" />
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/register">
+                  <Button size="lg" className="w-full sm:w-auto text-lg gap-2">
+                    Start Planning <ArrowRight className="w-5 h-5" />
+                  </Button>
+                </Link>
+                <Link href="/login">
+                  <Button variant="ghost" size="lg" className="w-full sm:w-auto text-lg bg-white/10 text-white backdrop-blur-md hover:bg-white/20">
+                    Log in
+                  </Button>
+                </Link>
+              </>
+            )}
           </motion.div>
         </motion.div>
       </section>
 
-      {/* Destination Showcase */}
+      {/* Destination Showcase — synced from /api/destinations */}
       <section className="py-24 px-6 md:px-12 max-w-7xl mx-auto">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Trending in Serendib</h2>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">Featured Trips</h2>
           <p className="text-foreground/60 max-w-2xl mx-auto">Discover the most inspiring locations expertly curated for your next journey.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {[
-            { name: "Ella", tags: "Nature • Hiking", budget: "LKR 45,000", image: "https://images.unsplash.com/photo-1620619767323-b95a89183081?q=80&w=800&auto=format&fit=crop" },
-            { name: "Mirissa", tags: "Beach • Surfing", budget: "LKR 60,000", image: "https://images.unsplash.com/photo-1577717903315-1691ae25ab3f?q=80&w=800&auto=format&fit=crop" },
-            { name: "Yala", tags: "Wildlife • Safari", budget: "LKR 85,000", image: "https://images.unsplash.com/photo-1544654803-b6d2a45d0af9?q=80&w=800&auto=format&fit=crop" }
-          ].map((dest, i) => (
+          {destinations.map((dest, i) => (
             <motion.div
               key={dest.name}
               initial={{ opacity: 0, y: 20 }}

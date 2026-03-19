@@ -1,14 +1,38 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
+    const { login } = useAuth();
+    const router = useRouter();
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError("");
+        setLoading(true);
+
+        try {
+            await login(email, password);
+            router.push("/dashboard");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Login failed");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <AuthLayout>
             <motion.div
@@ -22,10 +46,27 @@ export default function LoginPage() {
                 </div>
 
                 <Card variant="glass" className="p-6 md:p-8 backdrop-blur-xl bg-surface/40 border-white/10">
-                    <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+                    <form className="space-y-6" onSubmit={handleSubmit}>
+                        {error && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
+
                         <div className="space-y-2">
                             <label className="text-sm font-medium" htmlFor="email">Email</label>
-                            <Input id="email" type="email" placeholder="explorer@tripmate.lk" required />
+                            <Input
+                                id="email"
+                                type="email"
+                                placeholder="explorer@tripmate.lk"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
                         </div>
 
                         <div className="space-y-2">
@@ -35,7 +76,14 @@ export default function LoginPage() {
                                     Forgot Password?
                                 </Link>
                             </div>
-                            <Input id="password" type="password" placeholder="••••••••" required />
+                            <Input
+                                id="password"
+                                type="password"
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -43,8 +91,8 @@ export default function LoginPage() {
                             <label htmlFor="remember" className="text-sm text-foreground/80">Remember me</label>
                         </div>
 
-                        <Button type="submit" variant="primary" className="w-full">
-                            Sign In
+                        <Button type="submit" variant="primary" className="w-full" disabled={loading}>
+                            {loading ? "Signing in..." : "Sign In"}
                         </Button>
 
                         <p className="text-center text-sm text-foreground/60 mt-4">
