@@ -89,3 +89,9 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--surface);
 }
+
+/* Fix for Leaflet tiles breaking in Tailwind */
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+}

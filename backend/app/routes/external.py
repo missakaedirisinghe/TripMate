@@ -150,8 +150,7 @@ def get_videos(destination, current_user):
 
 
 @external_bp.route("/destinations", methods=["GET"])
-@token_required
-def list_destinations(current_user):
+def list_destinations():
     """List all destinations from the catalog.
 
     Used by Leaflet.js map to plot markers and by search to find places.

@@ -1,214 +1,325 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { MapPin, Users, Wallet, ArrowRight, Compass, LayoutDashboard } from "lucide-react";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { Plane, Search, ArrowRight, User, Calendar, MapPin, ListTodo, ThumbsUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 
+// Animation Variants
 const fadeUp = {
-  hidden: { opacity: 0, y: 30 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" as const } },
+  hidden: { opacity: 0, y: 40 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.8 } },
 };
 
 const staggerContainer = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.2 },
+    transition: { staggerChildren: 0.15 },
   },
 };
-
-/** Fallback destinations shown if the backend is unreachable. */
-const FALLBACK_DESTINATIONS = [
-  { name: "Ella", tags: "Nature • Hiking", budget: "LKR 45,000", image: "https://images.unsplash.com/photo-1620619767323-b95a89183081?q=80&w=800&auto=format&fit=crop" },
-  { name: "Mirissa", tags: "Beach • Surfing", budget: "LKR 60,000", image: "https://images.unsplash.com/photo-1577717903315-1691ae25ab3f?q=80&w=800&auto=format&fit=crop" },
-  { name: "Yala", tags: "Wildlife • Safari", budget: "LKR 85,000", image: "https://images.unsplash.com/photo-1544654803-b6d2a45d0af9?q=80&w=800&auto=format&fit=crop" },
-];
-
-interface Destination {
-  name: string;
-  tags: string;
-  budget: string;
-  image: string;
-}
 
 export default function LandingPage() {
   const { user, loading } = useAuth();
   const isLoggedIn = !loading && !!user;
-  const [destinations, setDestinations] = useState<Destination[]>(FALLBACK_DESTINATIONS);
-
-  useEffect(() => {
-    const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-
-    fetch(`${API}/destinations`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.destinations && data.destinations.length > 0) {
-          const mapped = data.destinations.slice(0, 3).map((d: Record<string, unknown>) => ({
-            name: d.name || "Sri Lanka",
-            tags: (d.category as string) || "Explore",
-            budget: `LKR ${((d.avg_budget as number) || 50000).toLocaleString()}`,
-            image: (d.image as string) || FALLBACK_DESTINATIONS[0].image,
-          }));
-          setDestinations(mapped);
-        }
-      })
-      .catch(() => {
-        // Keep fallback destinations — backend may not serve /destinations yet
-      });
-  }, []);
+  const { scrollY } = useScroll();
+  
+  // Fade out the generated mountain landscape to reveal the provided landscape underneath
+  const heroBgOpacity = useTransform(scrollY, [0, 600], [1, 0]);
+  
+  // Navbar glassmorphism opacity and color change based on scroll
+  const navBackground = useTransform(scrollY, [0, 100], ["rgba(255, 255, 255, 0.1)", "rgba(255, 255, 255, 0.85)"]);
+  const navBorder = useTransform(scrollY, [0, 100], ["rgba(255, 255, 255, 0.2)", "rgba(255, 255, 255, 1)"]);
+  const navColor = useTransform(scrollY, [0, 100], ["#ffffff", "#101828"]);
+  const navShadow = useTransform(scrollY, [0, 100], ["none", "0 10px 40px -10px rgba(0,0,0,0.1)"]);
 
   return (
-    <main className="min-h-screen bg-background">
-      {/* Navbar */}
-      <nav className="absolute top-0 w-full z-50 px-6 py-6 flex justify-between items-center">
-        <div className="flex items-center gap-2 text-white">
-          <Compass className="w-8 h-8 text-primary" />
-          <span className="text-xl font-bold tracking-tight">TripMate</span>
-        </div>
-        <div className="flex gap-4">
-          {isLoggedIn ? (
-            <Link href="/dashboard">
-              <Button variant="primary" className="gap-2">
-                <LayoutDashboard className="w-4 h-4" /> Dashboard
-              </Button>
+    <main className="min-h-screen bg-white font-sans selection:bg-[#00D1B2] selection:text-white">
+      
+      {/* 
+        ========================================
+        NAVIGATION BAR (Floating & Centered)
+        ========================================
+      */}
+      <div className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 w-full pointer-events-none">
+        <motion.nav 
+          style={{ backgroundColor: navBackground, borderColor: navBorder, color: navColor, boxShadow: navShadow }}
+          className="pointer-events-auto flex items-center justify-between px-6 py-3 md:py-4 rounded-full backdrop-blur-md border border-white/20 w-full max-w-5xl transition-colors duration-300"
+        >
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tight">
+            <Plane className="w-5 h-5 md:w-6 md:h-6 -rotate-45" strokeWidth={2.5} />
+            <span className="hidden sm:inline">TripMate</span>
+          </Link>
+
+          {/* Center Links (Desktop only) */}
+          <div className="hidden md:flex items-center gap-8 text-sm font-bold">
+            <Link href="#features" className="hover:text-[#00D1B2] transition-colors">Features</Link>
+            <Link href="#destinations" className="hover:text-[#00D1B2] transition-colors">Destinations</Link>
+            <Link href="#about" className="hover:text-[#00D1B2] transition-colors">About</Link>
+          </div>
+
+          {/* Right CTA */}
+          <div className="flex items-center gap-3">
+            {isLoggedIn ? (
+              <Link href="/dashboard" className="hidden sm:flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#101828] text-white text-sm font-bold hover:bg-black transition-all hover:scale-105 active:scale-95">
+                Dashboard
+              </Link>
+            ) : (
+              <Link href="/login" className="hidden sm:flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#101828] text-white text-sm font-bold hover:bg-black transition-all hover:scale-105 active:scale-95">
+                Login
+              </Link>
+            )}
+            <Link href="/trip/create" className="px-5 py-2.5 md:px-6 rounded-full bg-[#00D1B2] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#00c0a3] transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#00D1B2]/30">
+              <span className="hidden sm:inline">Plan Trip</span>
+              <ArrowRight className="w-4 h-4" />
             </Link>
-          ) : (
-            <>
-              <Link href="/login">
-                <Button variant="ghost" className="text-white hover:text-white/80">Log in</Button>
-              </Link>
-              <Link href="/register">
-                <Button variant="primary">Get Started</Button>
-              </Link>
-            </>
-          )}
-        </div>
-      </nav>
+          </div>
+        </motion.nav>
+      </div>
 
-      {/* Hero Section */}
-      <section className="relative h-screen w-full flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/40 via-black/20 to-background" />
-        <div
-          className="absolute inset-0 z-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('/assets/images/hero-bg.png')" }}
+      {/* 
+        ========================================
+        HERO SECTION
+        ========================================
+      */}
+      <section className="relative w-full h-[100vh] min-h-[700px] flex flex-col justify-center items-center text-center px-4 overflow-hidden md:rounded-b-[4rem]">
+        {/* Bottom layer: The provided landscape */}
+        <div 
+            className="absolute inset-0 bg-cover bg-center z-0"
+            style={{ backgroundImage: "url('/assets/images/provided_landscape.png')" }} 
         />
+        {/* Top layer: The generated landscape, fades out on scroll */}
+        <motion.div 
+            className="absolute inset-0 bg-cover bg-center z-0"
+            style={{ 
+              backgroundImage: "url('/assets/images/generated_landscape.png')",
+              opacity: heroBgOpacity
+            }} 
+        />
+        {/* Overlay gradient to ensure text legibility */}
+        <div className="absolute inset-0 bg-black/40 z-0" />
 
-        <motion.div
+        {/* Hero Content */}
+        <motion.div 
           variants={staggerContainer}
           initial="hidden"
           animate="visible"
-          className="relative z-20 text-center px-4 max-w-4xl mx-auto mt-20"
+          className="relative z-10 max-w-4xl mx-auto flex flex-col items-center mt-12"
         >
-          <motion.h1
-            variants={fadeUp}
-            className="text-5xl md:text-7xl font-extrabold text-white tracking-tight leading-tight mb-6"
-          >
-            Plan Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Sri Lankan</span><br />Adventure Together
-          </motion.h1>
-
-          <motion.p
-            variants={fadeUp}
-            className="text-lg md:text-2xl text-white/90 font-medium mb-10 max-w-2xl mx-auto"
-          >
-            Collaborative planning, smart budgeting, and AI-driven itinerary building tailored just for you.
-          </motion.p>
-
-          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 justify-center">
-            {isLoggedIn ? (
-              <Link href="/dashboard">
-                <Button size="lg" className="w-full sm:w-auto text-lg gap-2">
-                  Go to Dashboard <ArrowRight className="w-5 h-5" />
-                </Button>
-              </Link>
-            ) : (
-              <>
-                <Link href="/register">
-                  <Button size="lg" className="w-full sm:w-auto text-lg gap-2">
-                    Start Planning <ArrowRight className="w-5 h-5" />
-                  </Button>
-                </Link>
-                <Link href="/login">
-                  <Button variant="ghost" size="lg" className="w-full sm:w-auto text-lg bg-white/10 text-white backdrop-blur-md hover:bg-white/20">
-                    Log in
-                  </Button>
-                </Link>
-              </>
-            )}
+          <motion.div variants={fadeUp} className="inline-block mb-6 px-4 py-1.5 rounded-full border border-white/30 backdrop-blur-sm bg-white/10 text-white text-xs font-bold tracking-widest uppercase shadow-sm">
+            Collaborative Travel Planning
           </motion.div>
+          
+          <motion.h1 
+            variants={fadeUp}
+            className="text-5xl md:text-7xl lg:text-[6rem] font-bold text-white tracking-widest leading-[1.05] mb-8"
+          >
+            Plan your perfect trip, <br className="hidden md:block"/> together.
+          </motion.h1>
+          
+          <motion.p variants={fadeUp} className="text-lg md:text-xl text-white/90 max-w-2xl font-medium mb-12">
+            Build itineraries, vote on destinations, and split expenses seamlessly. The ultimate tool for modern group travel.
+          </motion.p>
+          
+          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row items-center gap-4">
+            <Link href="/trip/create" className="px-8 py-4 rounded-full bg-[#00D1B2] text-white text-base font-bold flex items-center gap-2 hover:bg-[#00c0a3] transition-all hover:scale-105 active:scale-95 shadow-xl shadow-[#00D1B2]/30">
+              Start Planning
+              <ArrowRight className="w-5 h-5" />
+            </Link>
+            <Link href="#destinations" className="px-8 py-4 rounded-full bg-white/10 backdrop-blur-md text-white text-base font-bold flex items-center gap-2 hover:bg-white/20 transition-all border border-white/20 hover:scale-105 active:scale-95">
+              Explore Destinations
+            </Link>
+          </motion.div>
+        </motion.div>
+
+        {/* Floating Glass Search Bar at the bottom of hero */}
+        <motion.div 
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.8, duration: 0.8 }}
+          className="absolute bottom-8 md:bottom-12 w-full max-w-4xl px-4 z-20"
+        >
+          <div className="bg-white/90 backdrop-blur-xl rounded-[2rem] p-2 flex flex-col md:flex-row shadow-[0_20px_40px_-15px_rgba(0,0,0,0.3)] border border-white">
+              <div className="flex-1 flex px-6 py-3 flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200">
+                  <span className="text-xs font-bold text-[#475467] tracking-wider mb-1 uppercase">Location</span>
+                  <div className="flex items-center gap-2 text-[#101828]">
+                      <MapPin className="w-5 h-5 text-[#00D1B2]" />
+                      <input 
+                          type="text" 
+                          placeholder="Where to next?" 
+                          className="bg-transparent border-none outline-none text-[#101828] placeholder-[#475467] w-full text-base font-bold uppercase tracking-wide"
+                          readOnly
+                      />
+                  </div>
+              </div>
+              <div className="flex-1 flex px-6 py-3 flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200">
+                  <span className="text-xs font-bold text-[#475467] tracking-wider mb-1 uppercase">Dates</span>
+                  <div className="flex items-center gap-2 text-[#101828]">
+                      <Calendar className="w-5 h-5 text-[#00D1B2]" />
+                      <input 
+                          type="text" 
+                          placeholder="Add dates" 
+                          className="bg-transparent border-none outline-none text-[#101828] placeholder-[#475467] w-full text-base font-bold uppercase tracking-wide"
+                          readOnly
+                      />
+                  </div>
+              </div>
+              <div className="px-2 py-2 flex items-center justify-center">
+                  <Link href="/trip/create" className="w-full md:w-16 h-14 rounded-[1.5rem] bg-[#101828] text-white flex items-center justify-center hover:bg-black transition-colors hover:scale-[1.02] active:scale-95 shadow-md">
+                      <Search className="w-6 h-6" />
+                  </Link>
+              </div>
+          </div>
         </motion.div>
       </section>
 
-      {/* Destination Showcase — synced from /api/destinations */}
-      <section className="py-24 px-6 md:px-12 max-w-7xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Featured Trips</h2>
-          <p className="text-foreground/60 max-w-2xl mx-auto">Discover the most inspiring locations expertly curated for your next journey.</p>
+      {/* 
+        ========================================
+        BENTO GRID FEATURES
+        ========================================
+      */}
+      <section id="features" className="py-24 md:py-32 px-6 md:px-12 max-w-7xl mx-auto">
+        <div className="mb-16 text-center md:text-left flex flex-col md:flex-row md:items-end justify-between gap-8">
+          <div className="max-w-xl">
+            <h2 className="text-4xl md:text-5xl font-bold text-[#101828] tracking-tight mb-6">
+              Travel planning, simplified for everyone.
+            </h2>
+            <p className="text-[#475467] text-lg font-medium leading-relaxed">
+              TripMate brings your group together. Build itineraries collaboratively, vote on the best spots, and track shared expenses in one place.
+            </p>
+          </div>
+          <Link href="#about" className="text-[#00D1B2] font-bold text-lg flex items-center gap-2 hover:gap-4 transition-all mx-auto md:mx-0">
+            Learn more <ArrowRight className="w-5 h-5" />
+          </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {destinations.map((dest, i) => (
-            <motion.div
-              key={dest.name}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ delay: i * 0.1, duration: 0.5 }}
-            >
-              <Card variant="interactive" className="group relative h-[400px] flex flex-col justify-end overflow-hidden border-none rounded-3xl">
-                <div
-                  className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-                  style={{ backgroundImage: `url('${dest.image}')` }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/40 to-transparent" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Card 1 */}
+          <div className="bg-[#F8F9FA] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] group hover:bg-[#101828] transition-colors duration-500 shadow-sm border border-gray-100">
+            <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-[#101828] group-hover:bg-[#00D1B2] group-hover:text-white transition-colors duration-500">
+              <ListTodo className="w-8 h-8" strokeWidth={1.5}/>
+            </div>
+            <div>
+              <h3 className="text-3xl font-bold text-[#101828] group-hover:text-white mb-3 transition-colors duration-500">Smart Itineraries</h3>
+              <p className="text-[#475467] group-hover:text-white/80 font-medium transition-colors duration-500 text-lg">
+                Drag-and-drop days, add notes, and build the perfect schedule with your friends in real-time.
+              </p>
+            </div>
+          </div>
 
-                <div className="relative z-10 p-6">
-                  <span className="inline-block px-3 py-1 mb-3 text-xs font-semibold bg-primary/90 text-white rounded-full backdrop-blur-md">
-                    {dest.tags}
-                  </span>
-                  <h3 className="text-2xl font-bold text-white mb-1">{dest.name}</h3>
-                  <div className="flex items-center text-white/80 text-sm gap-2">
-                    <Wallet className="w-4 h-4" /> Avg. Group Budget: {dest.budget}
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+          {/* Card 2 (Accented) */}
+          <div className="bg-[#00D1B2] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] text-white shadow-xl shadow-[#00D1B2]/20 relative overflow-hidden group">
+            <div className="absolute -right-8 -top-8 text-white/20 group-hover:scale-110 group-hover:rotate-12 transition-transform duration-700">
+              <ThumbsUp className="w-64 h-64 -rotate-12" />
+            </div>
+            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white relative z-10">
+              <ThumbsUp className="w-8 h-8" strokeWidth={1.5} />
+            </div>
+            <div className="relative z-10">
+              <h3 className="text-3xl font-bold mb-3">Group Voting</h3>
+              <p className="text-white/90 font-medium text-lg">
+                Stop arguing over where to eat. Propose places and let everyone vote to reach a consensus quickly.
+              </p>
+            </div>
+          </div>
 
-      {/* How it Works */}
-      <section className="py-24 bg-surface text-center">
-        <div className="max-w-7xl mx-auto px-6">
-          <h2 className="text-3xl md:text-4xl font-bold mb-16">How TripMate Works</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-            {[
-              { icon: MapPin, title: "1. Pick Destinations", desc: "Use our NLP model to find places matching your vibe or choose from trending spots." },
-              { icon: Users, title: "2. Invite the Crew", desc: "Send simple links. Vote on plans, suggest activities, and collaborate in real-time." },
-              { icon: Wallet, title: "3. Split the Budget", desc: "Our regression model predicts expenses and divides everything seamlessly." }
-            ].map((step, i) => (
-              <motion.div
-                key={step.title}
-                initial={{ opacity: 0, scale: 0.9 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.2 }}
-                className="flex flex-col items-center"
-              >
-                <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-6 text-primary">
-                  <step.icon className="w-10 h-10" />
-                </div>
-                <h3 className="text-xl font-bold mb-3">{step.title}</h3>
-                <p className="text-foreground/70 max-w-xs">{step.desc}</p>
-              </motion.div>
-            ))}
+          {/* Card 3 */}
+          <div className="bg-[#F8F9FA] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] group hover:bg-[#101828] transition-colors duration-500 shadow-sm border border-gray-100">
+            <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-[#101828] group-hover:bg-[#00D1B2] group-hover:text-white transition-colors duration-500">
+              <Wallet className="w-8 h-8" strokeWidth={1.5}/>
+            </div>
+            <div>
+              <h3 className="text-3xl font-bold text-[#101828] group-hover:text-white mb-3 transition-colors duration-500">Expense Splitting</h3>
+              <p className="text-[#475467] group-hover:text-white/80 font-medium transition-colors duration-500 text-lg">
+                Keep track of who paid for what. Settle up at the end of the trip without the spreadsheet headache.
+              </p>
+            </div>
           </div>
         </div>
       </section>
+
+      {/* 
+        ========================================
+        ASYMMETRIC DESTINATIONS GALLERY
+        ========================================
+      */}
+      <section id="destinations" className="py-24 bg-[#101828] text-white px-6 md:px-12 md:rounded-t-[4rem]">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-16 gap-8">
+            <div className="max-w-xl">
+              <h2 className="text-5xl font-bold tracking-tight mb-4">
+                Trending Destinations
+              </h2>
+              <p className="text-white/60 text-lg font-medium">
+                Find inspiration for your next group getaway. Explore the most popular locations booked by TripMate users.
+              </p>
+            </div>
+            <Link href="/trip/create" className="px-8 py-4 rounded-full border border-white/20 hover:bg-white hover:text-[#101828] transition-colors font-bold flex items-center gap-2 w-max">
+              Start a New Trip <ArrowRight className="w-5 h-5" />
+            </Link>
+          </div>
+
+          {/* Asymmetric Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-[800px] md:h-[600px]">
+            {/* Big Left Image */}
+            <Link href="/destinations/sigiriya" className="md:col-span-8 rounded-[2rem] overflow-hidden relative group cursor-pointer h-full block">
+              <div className="absolute inset-0 bg-[#1f2937] bg-[url('https://images.unsplash.com/photo-1586284693155-22d765fbfe9c?q=80&w=2600&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/90 via-[#101828]/20 to-transparent" />
+              <div className="absolute bottom-8 left-8 right-8 flex justify-between items-end">
+                <div>
+                  <h3 className="text-4xl font-bold mb-2">Sigiriya Rock Fortress</h3>
+                  <p className="text-white/80 font-medium flex items-center gap-2"><MapPin className="w-4 h-4"/> Ancient wonders & vibrant history</p>
+                </div>
+                <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center group-hover:bg-[#00D1B2] transition-[background-color] duration-500">
+                  <ArrowRight className="w-6 h-6" />
+                </div>
+              </div>
+            </Link>
+
+            {/* Right Stack */}
+            <div className="md:col-span-4 flex flex-col gap-6 h-full">
+              {/* Top Right */}
+              <Link href="/destinations/ella" className="flex-1 rounded-[2rem] overflow-hidden relative group cursor-pointer block">
+                <div className="absolute inset-0 bg-[#1f2937] bg-[url('https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?q=80&w=2639&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/90 via-transparent to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6">
+                  <h3 className="text-2xl font-bold mb-1">Ella</h3>
+                  <p className="text-[#00D1B2] font-bold text-sm">Scenic Train Rides & Nature</p>
+                </div>
+              </Link>
+              
+              {/* Bottom Right */}
+              <Link href="/destinations/mirissa" className="flex-1 rounded-[2rem] overflow-hidden relative group cursor-pointer block">
+                <div className="absolute inset-0 bg-[#1f2937] bg-[url('https://images.unsplash.com/photo-1546708973-143d2ff90df9?q=80&w=2574&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/90 via-transparent to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6">
+                  <h3 className="text-2xl font-bold mb-1">Mirissa</h3>
+                  <p className="text-[#00D1B2] font-bold text-sm">Whale Watching & Beaches</p>
+                </div>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="bg-[#101828] text-white/60 py-12 px-6 md:px-12 border-t border-white/10">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-2 font-bold text-2xl tracking-tight text-white">
+            <Plane className="w-8 h-8 -rotate-45" strokeWidth={2.5} />
+            TripMate
+          </div>
+          <p className="text-sm font-medium">© 2026 TripMate. All rights reserved.</p>
+          <div className="flex gap-8 text-sm font-bold text-white">
+            <Link href="/privacy" className="hover:text-[#00D1B2] transition-colors">Privacy Policy</Link>
+            <Link href="/terms" className="hover:text-[#00D1B2] transition-colors">Terms of Service</Link>
+            <Link href="/contact" className="hover:text-[#00D1B2] transition-colors">Contact Us</Link>
+          </div>
+        </div>
+      </footer>
+
     </main>
   );
 }

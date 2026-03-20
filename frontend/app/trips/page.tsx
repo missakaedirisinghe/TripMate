@@ -73,10 +73,44 @@ export default function MyTripsPage() {
     if (authLoading || loading) {
         return (
             <DashboardLayout>
-                <div className="flex items-center justify-center h-[60vh]">
-                    <div className="animate-pulse flex flex-col items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-primary/20" />
-                        <p className="text-foreground/50">Loading trips...</p>
+                <div className="max-w-6xl mx-auto space-y-8">
+                    {/* Header Skeleton */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="space-y-2">
+                            <div className="h-8 w-48 bg-surface/50 rounded-xl animate-pulse" />
+                            <div className="h-4 w-24 bg-surface/50 rounded-lg animate-pulse" />
+                        </div>
+                        <div className="h-10 w-32 bg-primary/20 rounded-xl animate-pulse" />
+                    </div>
+
+                    {/* Filters Skeleton */}
+                    <div className="flex gap-4">
+                        <div className="h-10 w-full sm:w-64 bg-surface/50 rounded-xl animate-pulse" />
+                        <div className="hidden sm:flex gap-2">
+                            {[1, 2, 3, 4].map(i => (
+                                <div key={i} className="h-10 w-24 bg-surface/50 rounded-full animate-pulse" />
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Cards Skeleton Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {[1, 2, 3, 4, 5, 6].map(i => (
+                            <Card key={i} className="p-6 h-48 border-white/5 bg-surface/30">
+                                <div className="flex justify-between mb-6">
+                                    <div className="h-6 w-20 bg-surface/50 rounded-full animate-pulse" />
+                                    <div className="h-6 w-6 bg-surface/50 rounded-md animate-pulse" />
+                                </div>
+                                <div className="space-y-3 mb-8">
+                                    <div className="h-6 w-3/4 bg-surface/50 rounded-lg animate-pulse" />
+                                    <div className="h-4 w-1/2 bg-surface/50 rounded-lg animate-pulse" />
+                                </div>
+                                <div className="flex gap-4 border-t border-white/5 pt-4">
+                                    <div className="h-4 w-16 bg-surface/50 rounded-md animate-pulse" />
+                                    <div className="h-4 w-16 bg-surface/50 rounded-md animate-pulse" />
+                                </div>
+                            </Card>
+                        ))}
                     </div>
                 </div>
             </DashboardLayout>

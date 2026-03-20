@@ -1,13 +1,18 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, useMemo, use } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { AIPlannerPanel } from "@/components/workspace/AIPlannerPanel";
+import { TripMap, type MapMarker } from "@/components/workspace/TripMap";
+import { WeatherPanel } from "@/components/workspace/WeatherPanel";
+import { VideoPanel } from "@/components/workspace/VideoPanel";
+import { VotingPanel } from "@/components/workspace/VotingPanel";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-    MapPin, Calendar, Wallet, Users, Plus, Share2, Sparkles, Trash2
+    MapPin, Calendar, Wallet, Users, Plus, Share2, Sparkles, Trash2,
+    Map, CloudSun, PlayCircle, Vote
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -15,6 +20,7 @@ import {
     tripsApi, itineraryApi, expensesApi,
     type Trip, type ItineraryDay, type Expense, type TripMember
 } from "@/lib/api";
+import "leaflet/dist/leaflet.css";
 
 export default function TripWorkspacePage({ params }: { params: Promise<{ id: string }> }) {
     const { id: tripId } = use(params);
@@ -42,11 +48,16 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
     const [addingToDay, setAddingToDay] = useState<string | null>(null);
     const [newActivityTitle, setNewActivityTitle] = useState("");
 
+    const [mapMarkers, setMapMarkers] = useState<MapMarker[]>([]);
+
     const tabs = [
-        { id: "overview", label: "Overview" },
-        { id: "itinerary", label: "Itinerary" },
-        { id: "expenses", label: "Expenses" },
-        { id: "members", label: "Members" },
+        { id: "itinerary", label: "Itinerary", icon: Calendar },
+        { id: "map", label: "Map", icon: Map },
+        { id: "expenses", label: "Expenses", icon: Wallet },
+        { id: "weather", label: "Weather", icon: CloudSun },
+        { id: "videos", label: "Videos", icon: PlayCircle },
+        { id: "votes", label: "Votes", icon: Vote },
+        { id: "members", label: "Members", icon: Users },
     ];
 
     useEffect(() => {
@@ -65,6 +76,29 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                 setDays(daysRes.days);
                 setExpenses(expRes.expenses);
                 setMembers(memRes.members);
+
+                // Build map markers from activities
+                const markers: MapMarker[] = [];
+                for (const day of daysRes.days) {
+                    for (const act of day.activities) {
+                        if (act.lat && act.lng) {
+                            markers.push({ name: act.title, lat: act.lat, lng: act.lng, type: "activity", description: act.category || undefined });
+                        }
+                    }
+                }
+                // Also fetch destinations for general markers
+                try {
+                    const destRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/destinations?search=${encodeURIComponent(tripRes.trip.destination)}`);
+                    const destData = await destRes.json();
+                    if (destData.destinations) {
+                        for (const d of destData.destinations.slice(0, 20)) {
+                            if (!markers.some(m => m.name === d.name)) {
+                                markers.push({ name: d.name, lat: d.lat, lng: d.lng, type: "destination", description: d.address || undefined });
+                            }
+                        }
+                    }
+                } catch { /* Destinations are optional */ }
+                setMapMarkers(markers);
             } catch {
                 router.push("/dashboard");
             } finally {
@@ -119,6 +153,16 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
         }
     };
 
+    /** Transition trip status: planning → active → completed */
+    const handleStatusChange = async (newStatus: string) => {
+        try {
+            const res = await tripsApi.update(tripId, { status: newStatus });
+            setTrip(res.trip);
+        } catch {
+            // Silently fail
+        }
+    };
+
     if (loading || !trip) {
         return (
             <div className="flex h-screen w-full bg-background items-center justify-center">
@@ -142,7 +186,7 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                 {/* Header Banner */}
                 <div
                     className="h-48 shrink-0 relative flex flex-col justify-end p-6"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1577717903315-1691ae25ab3f?q=80&w=800&auto=format&fit=crop')", backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    style={{ backgroundImage: "url('/assets/images/workspace_banner.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}
                 >
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                     <div className="relative z-10 flex justify-between items-end">
@@ -152,17 +196,33 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                             </span>
                             <h1 className="text-3xl font-bold text-white tracking-tight drop-shadow-md">{trip.title}</h1>
                         </div>
-                        <div className="flex -space-x-3">
-                            {members.slice(0, 3).map((m, i) => (
-                                <div key={m.id} className="w-8 h-8 rounded-full border-2 border-surface bg-primary/20 flex justify-center items-center text-xs font-bold text-white shadow-sm">
-                                    {m.user_name?.charAt(0) || "U"}
-                                </div>
-                            ))}
-                            {members.length > 3 && (
-                                <div className="w-8 h-8 rounded-full border-2 border-surface bg-surface flex justify-center items-center text-xs text-foreground">
-                                    +{members.length - 3}
-                                </div>
-                            )}
+                        <div className="flex flex-col items-end gap-2">
+                            {/* Status Badge + Selector */}
+                            <select
+                                value={trip.status}
+                                onChange={(e) => handleStatusChange(e.target.value)}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer appearance-none text-center border-0 outline-none ${
+                                    trip.status === 'completed' ? 'bg-green-500/80 text-white' :
+                                    trip.status === 'active' ? 'bg-blue-500/80 text-white' :
+                                    'bg-amber-500/80 text-white'
+                                }`}
+                            >
+                                <option value="planning">📋 Planning</option>
+                                <option value="active">🚀 Active</option>
+                                <option value="completed">✅ Completed</option>
+                            </select>
+                            <div className="flex -space-x-3">
+                                {members.slice(0, 3).map((m, i) => (
+                                    <div key={m.id} className="w-8 h-8 rounded-full border-2 border-surface bg-primary/20 flex justify-center items-center text-xs font-bold text-white shadow-sm">
+                                        {m.user_name?.charAt(0) || "U"}
+                                    </div>
+                                ))}
+                                {members.length > 3 && (
+                                    <div className="w-8 h-8 rounded-full border-2 border-surface bg-surface flex justify-center items-center text-xs text-foreground">
+                                        +{members.length - 3}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -398,23 +458,45 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                     </div>
                                 </div>
                             )}
+
+                            {/* MAP TAB */}
+                            {activeTab === "map" && (
+                                <TripMap markers={mapMarkers} destination={trip.destination} />
+                            )}
+
+                            {/* WEATHER TAB */}
+                            {activeTab === "weather" && (
+                                <WeatherPanel destination={trip.destination} />
+                            )}
+
+                            {/* VIDEOS TAB */}
+                            {activeTab === "videos" && (
+                                <VideoPanel destination={trip.destination} />
+                            )}
+
+                            {/* VOTES TAB */}
+                            {activeTab === "votes" && user && (
+                                <VotingPanel tripId={tripId} currentUserId={user.id} />
+                            )}
                         </motion.div>
                     </AnimatePresence>
                 </div>
             </div>
 
-            {/* Right Area: Map Visualization */}
-            <div className="hidden md:block flex-1 relative bg-surface overflow-hidden">
-                <div
-                    className="absolute inset-0 bg-cover bg-center opacity-60"
-                    style={{ backgroundImage: "url('/assets/images/sri-lanka-map.png')" }}
-                />
-                <div className="absolute inset-0 bg-primary/5 mix-blend-overlay" />
-
-                <div className="absolute top-6 right-6">
-                    <Card className="px-4 py-2 flex items-center gap-2 shadow-lg backdrop-blur-md bg-background/80 border-white/10">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Map Sync Active
-                    </Card>
+            {/* Right Area: Live Map */}
+            <div className="hidden md:flex flex-1 flex-col bg-surface overflow-hidden">
+                <div className="p-4 border-b border-border bg-background/80 backdrop-blur-xl">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold flex items-center gap-2">
+                            <Map className="w-4 h-4 text-primary" /> Trip Map
+                        </h3>
+                        <Card className="px-3 py-1 flex items-center gap-2 text-xs bg-background/80 border-white/10">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live
+                        </Card>
+                    </div>
+                </div>
+                <div className="flex-1">
+                    <TripMap markers={mapMarkers} destination={trip.destination} className="h-full rounded-none border-none" />
                 </div>
             </div>
 
