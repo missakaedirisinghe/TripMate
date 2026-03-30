@@ -71,7 +71,7 @@ export default function LandingPage() {
                 Login
               </Link>
             )}
-            <Link href="/trip/create" className="px-5 py-2.5 md:px-6 rounded-full bg-[#00D1B2] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#00c0a3] transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#00D1B2]/30">
+            <Link href={isLoggedIn ? "/trip/create" : "/login"} className="px-5 py-2.5 md:px-6 rounded-full bg-[#00D1B2] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#00c0a3] transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#00D1B2]/30">
               <span className="hidden sm:inline">Plan Trip</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
@@ -124,7 +124,7 @@ export default function LandingPage() {
           </motion.p>
           
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row items-center gap-4">
-            <Link href="/trip/create" className="px-8 py-4 rounded-full bg-[#00D1B2] text-white text-base font-bold flex items-center gap-2 hover:bg-[#00c0a3] transition-all hover:scale-105 active:scale-95 shadow-xl shadow-[#00D1B2]/30">
+            <Link href={isLoggedIn ? "/trip/create" : "/login"} className="px-8 py-4 rounded-full bg-[#00D1B2] text-white text-base font-bold flex items-center gap-2 hover:bg-[#00c0a3] transition-all hover:scale-105 active:scale-95 shadow-xl shadow-[#00D1B2]/30">
               Start Planning
               <ArrowRight className="w-5 h-5" />
             </Link>
@@ -167,7 +167,7 @@ export default function LandingPage() {
                   </div>
               </div>
               <div className="px-2 py-2 flex items-center justify-center">
-                  <Link href="/trip/create" className="w-full md:w-16 h-14 rounded-[1.5rem] bg-[#101828] text-white flex items-center justify-center hover:bg-black transition-colors hover:scale-[1.02] active:scale-95 shadow-md">
+                  <Link href={isLoggedIn ? "/trip/create" : "/login"} aria-label="Search destinations" className="w-full md:w-16 h-14 rounded-[1.5rem] bg-[#101828] text-white flex items-center justify-center hover:bg-black transition-colors hover:scale-[1.02] active:scale-95 shadow-md">
                       <Search className="w-6 h-6" />
                   </Link>
               </div>
@@ -190,27 +190,27 @@ export default function LandingPage() {
               TripMate brings your group together. Build itineraries collaboratively, vote on the best spots, and track shared expenses in one place.
             </p>
           </div>
-          <Link href="#about" className="text-[#00D1B2] font-bold text-lg flex items-center gap-2 hover:gap-4 transition-all mx-auto md:mx-0">
+          <Link href="#about" className="text-[#00A08B] font-bold text-lg flex items-center gap-2 hover:gap-4 transition-all mx-auto md:mx-0">
             Learn more <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Card 1 */}
-          <div className="bg-[#F8F9FA] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] group hover:bg-[#101828] transition-colors duration-500 shadow-sm border border-gray-100">
-            <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-[#101828] group-hover:bg-[#00D1B2] group-hover:text-white transition-colors duration-500">
+          <div className="bg-white rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] group hover:bg-[#101828] transition-colors duration-200 shadow-md border-2 border-gray-200 cursor-pointer">
+            <div className="w-16 h-16 rounded-full bg-[#F8F9FA] shadow-sm flex items-center justify-center text-[#101828] group-hover:bg-[#00D1B2] group-hover:text-white transition-colors duration-200">
               <ListTodo className="w-8 h-8" strokeWidth={1.5}/>
             </div>
             <div>
-              <h3 className="text-3xl font-bold text-[#101828] group-hover:text-white mb-3 transition-colors duration-500">Smart Itineraries</h3>
-              <p className="text-[#475467] group-hover:text-white/80 font-medium transition-colors duration-500 text-lg">
+              <h3 className="text-3xl font-bold text-[#101828] group-hover:text-white mb-3 transition-colors duration-200">Smart Itineraries</h3>
+              <p className="text-[#475467] group-hover:text-white/80 font-medium transition-colors duration-200 text-lg">
                 Drag-and-drop days, add notes, and build the perfect schedule with your friends in real-time.
               </p>
             </div>
           </div>
 
           {/* Card 2 (Accented) */}
-          <div className="bg-[#00D1B2] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] text-white shadow-xl shadow-[#00D1B2]/20 relative overflow-hidden group">
+          <div className="bg-[#00D1B2] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] text-white shadow-xl shadow-[#00D1B2]/20 relative overflow-hidden group border-2 border-[#00A08B]">
             <div className="absolute -right-8 -top-8 text-white/20 group-hover:scale-110 group-hover:rotate-12 transition-transform duration-700">
               <ThumbsUp className="w-64 h-64 -rotate-12" />
             </div>
@@ -226,18 +226,73 @@ export default function LandingPage() {
           </div>
 
           {/* Card 3 */}
-          <div className="bg-[#F8F9FA] rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] group hover:bg-[#101828] transition-colors duration-500 shadow-sm border border-gray-100">
-            <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-[#101828] group-hover:bg-[#00D1B2] group-hover:text-white transition-colors duration-500">
+          <div className="bg-white rounded-[2rem] p-8 md:p-10 flex flex-col justify-between h-[360px] group hover:bg-[#101828] transition-colors duration-200 shadow-md border-2 border-gray-200 cursor-pointer">
+            <div className="w-16 h-16 rounded-full bg-[#F8F9FA] shadow-sm flex items-center justify-center text-[#101828] group-hover:bg-[#00D1B2] group-hover:text-white transition-colors duration-200">
               <Wallet className="w-8 h-8" strokeWidth={1.5}/>
             </div>
             <div>
-              <h3 className="text-3xl font-bold text-[#101828] group-hover:text-white mb-3 transition-colors duration-500">Expense Splitting</h3>
-              <p className="text-[#475467] group-hover:text-white/80 font-medium transition-colors duration-500 text-lg">
+              <h3 className="text-3xl font-bold text-[#101828] group-hover:text-white mb-3 transition-colors duration-200">Expense Splitting</h3>
+              <p className="text-[#475467] group-hover:text-white/80 font-medium transition-colors duration-200 text-lg">
                 Keep track of who paid for what. Settle up at the end of the trip without the spreadsheet headache.
               </p>
             </div>
           </div>
         </div>
+      </section>
+
+      {/* 
+        ========================================
+        ABOUT SECTION
+        ========================================
+      */}
+      <section id="about" className="py-24 md:py-32 px-6 md:px-12 max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-12 md:gap-20">
+        <div className="flex-1 w-full relative">
+          <div className="absolute inset-0 bg-[#00D1B2]/10 blur-3xl rounded-full translate-y-8" />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+            className="relative aspect-square md:aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl"
+          >
+            <div 
+              className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=2600&auto=format&fit=crop')] bg-cover bg-center"
+            />
+          </motion.div>
+        </div>
+        
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="flex-1"
+        >
+          <div className="inline-block mb-6 px-4 py-1.5 rounded-full bg-[#00D1B2]/10 text-[#00A08B] text-sm font-bold tracking-widest uppercase">
+            Our Story
+          </div>
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-[#101828] tracking-tight mb-6 leading-tight">
+            Built for the <br/><span className="text-[#00A08B]">modern traveler.</span>
+          </h2>
+          <p className="text-[#475467] text-lg lg:text-xl font-medium leading-relaxed mb-6">
+            TripMate was born from the frustrating reality of messy group chats and endless spreadsheets. We believe travel should be about the destination, not the coordination.
+          </p>
+          <p className="text-[#475467] text-lg lg:text-xl font-medium leading-relaxed mb-8">
+            Our mission is to empower groups to explore the unseen together, making planning as seamless and enjoyable as the journey itself.
+          </p>
+          
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col">
+              <span className="text-3xl font-bold text-[#101828]">10k+</span>
+              <span className="text-sm font-bold text-[#475467] uppercase tracking-wider">Trips Planned</span>
+            </div>
+            <div className="w-px h-12 bg-gray-200" />
+            <div className="flex flex-col">
+              <span className="text-3xl font-bold text-[#101828]">50+</span>
+              <span className="text-sm font-bold text-[#475467] uppercase tracking-wider">Countries</span>
+            </div>
+          </div>
+        </motion.div>
       </section>
 
       {/* 
@@ -256,7 +311,7 @@ export default function LandingPage() {
                 Find inspiration for your next group getaway. Explore the most popular locations booked by TripMate users.
               </p>
             </div>
-            <Link href="/trip/create" className="px-8 py-4 rounded-full border border-white/20 hover:bg-white hover:text-[#101828] transition-colors font-bold flex items-center gap-2 w-max">
+            <Link href={isLoggedIn ? "/trip/create" : "/login"} className="px-8 py-4 rounded-full border border-white/20 hover:bg-white hover:text-[#101828] transition-colors font-bold flex items-center gap-2 w-max">
               Start a New Trip <ArrowRight className="w-5 h-5" />
             </Link>
           </div>
@@ -265,7 +320,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-[800px] md:h-[600px]">
             {/* Big Left Image */}
             <Link href="/destinations/sigiriya" className="md:col-span-8 rounded-[2rem] overflow-hidden relative group cursor-pointer h-full block">
-              <div className="absolute inset-0 bg-[#1f2937] bg-[url('https://images.unsplash.com/photo-1586284693155-22d765fbfe9c?q=80&w=2600&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+              <div className="absolute inset-0 bg-[#1f2937] bg-[url('/assets/images/sigiriya.png')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
               <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/90 via-[#101828]/20 to-transparent" />
               <div className="absolute bottom-8 left-8 right-8 flex justify-between items-end">
                 <div>
@@ -282,7 +337,7 @@ export default function LandingPage() {
             <div className="md:col-span-4 flex flex-col gap-6 h-full">
               {/* Top Right */}
               <Link href="/destinations/ella" className="flex-1 rounded-[2rem] overflow-hidden relative group cursor-pointer block">
-                <div className="absolute inset-0 bg-[#1f2937] bg-[url('https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?q=80&w=2639&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute inset-0 bg-[#1f2937] bg-[url('/assets/images/ella.png')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/90 via-transparent to-transparent" />
                 <div className="absolute bottom-6 left-6 right-6">
                   <h3 className="text-2xl font-bold mb-1">Ella</h3>
@@ -292,7 +347,7 @@ export default function LandingPage() {
               
               {/* Bottom Right */}
               <Link href="/destinations/mirissa" className="flex-1 rounded-[2rem] overflow-hidden relative group cursor-pointer block">
-                <div className="absolute inset-0 bg-[#1f2937] bg-[url('https://images.unsplash.com/photo-1546708973-143d2ff90df9?q=80&w=2574&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute inset-0 bg-[#1f2937] bg-[url('/assets/images/mirissa.png')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#101828]/90 via-transparent to-transparent" />
                 <div className="absolute bottom-6 left-6 right-6">
                   <h3 className="text-2xl font-bold mb-1">Mirissa</h3>
