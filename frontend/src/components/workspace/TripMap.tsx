@@ -33,8 +33,10 @@ export interface MapMarker {
     name: string;
     lat: number;
     lng: number;
-    type?: "activity" | "destination";
+    type?: string;
     description?: string;
+    image_url?: string;
+    rating?: number;
 }
 
 interface TripMapProps {
@@ -93,7 +95,7 @@ export function TripMap({ markers = [], destination, className = "" }: TripMapPr
             <MapContainer
                 center={center}
                 zoom={zoom}
-                style={{ height: "100%", width: "100%" }}
+                style={{ height: "100%", width: "100%", zIndex: 1 }}
                 scrollWheelZoom={true}
             >
                 <TileLayer
@@ -102,14 +104,30 @@ export function TripMap({ markers = [], destination, className = "" }: TripMapPr
                 />
                 {markers.map((marker, i) => (
                     <Marker key={`${marker.name}-${i}`} position={[marker.lat, marker.lng]}>
-                        <Popup>
-                            <div className="text-sm">
-                                <strong>{marker.name}</strong>
-                                {marker.description && (
-                                    <p className="text-xs mt-1 text-gray-600">{marker.description}</p>
+                        <Popup className="custom-popup min-w-[200px]">
+                            <div className="flex flex-col gap-2 overflow-hidden">
+                                {marker.image_url && (
+                                    <div className="h-28 -m-1 mb-1 overflow-hidden rounded-t-lg">
+                                        <img 
+                                            src={marker.image_url} 
+                                            alt={marker.name} 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </div>
                                 )}
-                                {marker.type && (
-                                    <span className="text-xs text-primary capitalize">{marker.type}</span>
+                                <div>
+                                    <h3 className="font-semibold text-base leading-tight text-foreground">{marker.name}</h3>
+                                    {marker.rating && marker.rating > 0 && (
+                                        <div className="flex items-center gap-1 mt-1">
+                                            <span className="text-sm font-medium text-amber-500">{marker.rating.toFixed(1)}</span>
+                                            <span className="text-xs text-amber-500">★</span>
+                                        </div>
+                                    )}
+                                </div>
+                                {marker.description && (
+                                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                                        {marker.description}
+                                    </p>
                                 )}
                             </div>
                         </Popup>

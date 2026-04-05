@@ -6,9 +6,10 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { motion } from "framer-motion";
-import { MapPin, Calendar, Wallet, Users, Compass, ChevronRight } from "lucide-react";
+import { MapPin, Calendar, Wallet, Users, Compass, ChevronRight, Sparkles } from "lucide-react";
+import { AIPlannerPanel } from "@/components/workspace/AIPlannerPanel";
 import { useRouter } from "next/navigation";
-import { tripsApi } from "@/lib/api";
+import { tripsApi, itineraryApi, type RecommendationResult } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 export default function CreateTripPage() {
@@ -20,6 +21,9 @@ export default function CreateTripPage() {
     const [inviteEmail, setInviteEmail] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [isAIPlannerOpen, setIsAIPlannerOpen] = useState(false);
+    const [aiRoute, setAiRoute] = useState<RecommendationResult["recommended_route"] | null>(null);
+    const [aiDuration, setAiDuration] = useState<number>(3);
     const router = useRouter();
     const { user } = useAuth();
 
@@ -53,6 +57,36 @@ export default function CreateTripPage() {
                 trip_type: tripType || undefined,
             });
 
+            // If AI route exists, distribute and create itinerary
+            if (aiRoute && aiRoute.length > 0) {
+                const stopsPerDay = Math.ceil(aiRoute.length / aiDuration);
+                let currentItemIndex = 0;
+                
+                for (let dayNumber = 1; dayNumber <= aiDuration; dayNumber++) {
+                    try {
+                        const dayRes = await itineraryApi.addDay(res.trip.id, { day_number: dayNumber });
+                        const dayId = dayRes.day.id;
+                        
+                        for (let i = 0; i < stopsPerDay; i++) {
+                            if (currentItemIndex >= aiRoute.length) break;
+                            const place = aiRoute[currentItemIndex];
+                            await itineraryApi.addActivity(res.trip.id, dayId, {
+                                title: `Visit ${place.name}`,
+                                description: `AI Suggested Stop. Rating: ${place.rating || 'N/A'}/5`,
+                                lat: place.lat,
+                                lng: place.lng,
+                                category: "adventure", // generic fallback
+                                estimated_cost: 0,
+                                order_index: i
+                            });
+                            currentItemIndex++;
+                        }
+                    } catch (itineraryErr) {
+                        console.error("Failed to add AI itinerary to day", dayNumber, itineraryErr);
+                    }
+                }
+            }
+
             // Invite member if email was entered
             if (inviteEmail.trim()) {
                 try {
@@ -70,18 +104,39 @@ export default function CreateTripPage() {
         }
     };
 
+    const handleAIApply = (data: { destination: string; budget: string; activities: string[]; route: RecommendationResult["recommended_route"]; duration: number }) => {
+        setDestination(data.destination);
+        setBudget(data.budget);
+        setAiRoute(data.route);
+        setAiDuration(data.duration);
+        
+        const acts = data.activities.join(" ").toLowerCase();
+        if (acts.includes("beach") || acts.includes("surf")) setTripType("beach");
+        else if (acts.includes("hik") || acts.includes("adventur")) setTripType("adventure");
+        else if (acts.includes("wildlife") || acts.includes("safari")) setTripType("wildlife");
+        else if (acts.includes("cultur") || acts.includes("temple")) setTripType("cultural");
+    };
+
     return (
         <DashboardLayout>
             <div className="max-w-5xl mx-auto">
-                <div className="mb-8">
-                    <motion.h1
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-3xl md:text-4xl font-bold tracking-tight mb-2"
+                <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <motion.h1
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="text-3xl md:text-4xl font-bold tracking-tight mb-2"
+                        >
+                            Create New Trip
+                        </motion.h1>
+                        <p className="text-foreground/60 text-lg">Set up the foundations for your upcoming journey.</p>
+                    </div>
+                    <Button 
+                        onClick={() => setIsAIPlannerOpen(true)} 
+                        className="bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/20 gap-2 shrink-0 h-12 px-6 rounded-2xl"
                     >
-                        Create New Trip
-                    </motion.h1>
-                    <p className="text-foreground/60 text-lg">Set up the foundations for your upcoming journey.</p>
+                        <Sparkles className="w-5 h-5" /> Let AI Plan For Me
+                    </Button>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -114,6 +169,9 @@ export default function CreateTripPage() {
                                             {popularDestinations.map(dest => (
                                                 <option key={dest} value={dest}>{dest}</option>
                                             ))}
+                                            {destination && !popularDestinations.includes(destination) && (
+                                                <option key={destination} value={destination}>{destination}</option>
+                                            )}
                                         </select>
                                         <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
                                             <ChevronRight className="h-4 w-4 text-foreground/50 rotate-90" />
@@ -233,6 +291,12 @@ export default function CreateTripPage() {
                     </div>
                 </div>
             </div>
+            
+            <AIPlannerPanel 
+                isOpen={isAIPlannerOpen} 
+                onClose={() => setIsAIPlannerOpen(false)} 
+                onApply={handleAIApply} 
+            />
         </DashboardLayout>
     );
 }

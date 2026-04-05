@@ -5,14 +5,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, MapPin, Wallet, ArrowRight, Activity } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { recommendApi, type RecommendationResult } from "@/lib/api";
+import { WeatherPanel } from "@/components/workspace/WeatherPanel";
 
 interface AIPlannerPanelProps {
     isOpen: boolean;
     onClose: () => void;
     tripId?: string;
+    onApply?: (data: { destination: string; budget: string; activities: string[]; route: RecommendationResult["recommended_route"]; duration: number }) => void;
 }
 
-export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps) {
+export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPanelProps) {
     const [query, setQuery] = useState("");
     const [isGenerating, setIsGenerating] = useState(false);
     const [result, setResult] = useState<null | {
@@ -20,6 +22,10 @@ export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps)
         feasibilityColor: string;
         budgetEstimate: string;
         route: RecommendationResult["recommended_route"];
+        rawBudget: number;
+        activities: string[];
+        duration: number;
+        maxBudget?: number;
     }>(null);
     const [error, setError] = useState("");
 
@@ -38,14 +44,34 @@ export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps)
         const destKeywords = ["Ella", "Mirissa", "Sigiriya", "Yala", "Arugam Bay", "Kandy", "Galle", "Nuwara Eliya", "Trincomalee"];
         const bucketList = destKeywords.filter(d => query.toLowerCase().includes(d.toLowerCase()));
 
+        // Parse duration (e.g. 3 day, 5-day)
+        let duration = 3;
+        const dayMatch = query.match(/\b(\d+)\s*-?day/i);
+        if (dayMatch) duration = parseInt(dayMatch[1], 10);
+
+        // Parse budget
+        let maxBudget: number | undefined;
+        const numMatch = query.match(/\b(\d{4,})\b/);
+        const kMatch = query.match(/\b(\d+)\s*[kK]\b/);
+        if (numMatch) {
+            maxBudget = parseInt(numMatch[1], 10);
+        } else if (kMatch) {
+            maxBudget = parseInt(kMatch[1], 10) * 1000;
+        }
+
         try {
             // Try real recommendation API
-            const recResult = await recommendApi.getRecommendations({ activities, bucket_list: bucketList });
+            const recResult = await recommendApi.getRecommendations({ 
+                activities, 
+                bucket_list: bucketList,
+                max_budget: maxBudget,
+                duration
+            });
 
-            // Also get cost estimation
+            // Also get cost estimation based on AI suggestions
             const costResult = await recommendApi.estimateCost({
                 destination: bucketList[0] || "Sri Lanka",
-                duration_days: recResult.route_count || 3,
+                duration_days: duration,
                 num_travelers: 2,
                 vehicle_type: "car",
                 accommodation_type: "mid-range",
@@ -55,7 +81,11 @@ export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps)
                 feasibility: "High",
                 feasibilityColor: "text-green-500",
                 budgetEstimate: `LKR ${costResult.estimation.total.toLocaleString()}`,
+                rawBudget: costResult.estimation.total,
                 route: recResult.recommended_route,
+                activities,
+                duration,
+                maxBudget
             });
         } catch {
             // Fallback: use cost estimation only (ML model may not be loaded)
@@ -72,17 +102,35 @@ export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps)
                     feasibility: "Medium",
                     feasibilityColor: "text-yellow-500",
                     budgetEstimate: `LKR ${costResult.estimation.total.toLocaleString()}`,
+                    rawBudget: costResult.estimation.total,
                     route: bucketList.map((name, i) => ({
                         name,
                         lat: 7.0 + i * 0.5,
                         lng: 80.0 + i * 0.3,
                     })),
+                    activities,
+                    duration,
+                    maxBudget
                 });
             } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : "AI service is temporarily unavailable");
             }
         } finally {
             setIsGenerating(false);
+        }
+    };
+
+    const handleApply = () => {
+        if (!result) return;
+        if (onApply) {
+            onApply({
+                destination: result.route[0]?.name || "Sri Lanka",
+                budget: result.maxBudget ? result.maxBudget.toString() : result.rawBudget.toString(),
+                activities: result.activities,
+                route: result.route,
+                duration: result.duration
+            });
+            onClose();
         }
     };
 
@@ -197,19 +245,26 @@ export function AIPlannerPanel({ isOpen, onClose, tripId }: AIPlannerPanelProps)
                                             <MapPin className="w-4 h-4" /> Suggested Route
                                         </h3>
                                         <div className="space-y-4 relative pl-4 border-l-2 border-border/50 ml-2">
-                                            {result.route.map((place, idx) => (
+                                            {result.route.map((place: any, idx: number) => (
                                                 <div key={idx} className="relative">
                                                     <div className="absolute -left-[25px] top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
                                                     <h4 className="font-bold text-foreground mb-1">Stop {idx + 1}: {place.name}</h4>
-                                                    {place.rating && <p className="text-sm text-foreground/70">Rating: {place.rating}/5</p>}
+                                                    {place.rating && <p className="text-sm text-foreground/70">Rating: {place.rating.toFixed(1)}/5</p>}
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
-                                    <Button variant="secondary" className="w-full">
-                                        Apply to Workspace
-                                    </Button>
+                                    {/* Weather Outlook */}
+                                    <div className="pt-2 border-t border-border/50">
+                                        <WeatherPanel destination={result.route[0]?.name || "Sri Lanka"} />
+                                    </div>
+
+                                    {onApply && (
+                                        <Button variant="primary" className="w-full" onClick={handleApply}>
+                                            Apply AI Settings to Trip Let's Go!
+                                        </Button>
+                                    )}
                                 </motion.div>
                             )}
 

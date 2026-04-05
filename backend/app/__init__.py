@@ -40,10 +40,8 @@ def create_app(config_class=None):
     # Import models so Alembic can detect them
     from app import models  # noqa: F401
 
-    # Load ML recommendation model
-    from app.routes.recommendations import load_model
-    with app.app_context():
-        app.config["RECOMMENDER"] = load_model(app)
+    # ML routing and recommendations now utilize dynamic TF-IDF and greedy routing directly
+    # via the database (see app.routes.recommendations)
 
     # --- Register Blueprints ---
 
@@ -73,11 +71,10 @@ def create_app(config_class=None):
     @app.route("/health")
     def health():
         """Health check endpoint for monitoring."""
-        recommender_loaded = app.config.get("RECOMMENDER") is not None
         return jsonify({
             "status": "healthy",
             "service": "TripMate API",
-            "ml_model_loaded": recommender_loaded,
+            "ml_model_loaded": True, # Dynamic TF-IDF model is always available
         })
 
     return app

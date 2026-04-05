@@ -4,7 +4,6 @@ import React, { useState, useEffect, useMemo, use } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { AIPlannerPanel } from "@/components/workspace/AIPlannerPanel";
 import { TripMap, type MapMarker } from "@/components/workspace/TripMap";
 import { WeatherPanel } from "@/components/workspace/WeatherPanel";
 import { VideoPanel } from "@/components/workspace/VideoPanel";
@@ -242,11 +241,6 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                 <Wallet className="w-4 h-4 text-secondary" />
                                 LKR {trip.budget_limit ? `${(trip.budget_limit / 1000).toFixed(0)}k` : "N/A"}
                             </span>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button onClick={() => setIsAIPlannerOpen(true)} variant="primary" size="sm" className="h-8 gap-2 bg-gradient-to-r from-primary to-secondary shadow-[0_0_15px_rgba(249,115,22,0.3)]">
-                                <Sparkles className="w-4 h-4" /> Ask AI
-                            </Button>
                         </div>
                     </div>
 
@@ -499,8 +493,6 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                     <TripMap markers={mapMarkers} destination={trip.destination} className="h-full rounded-none border-none" />
                 </div>
             </div>
-
-            <AIPlannerPanel isOpen={isAIPlannerOpen} onClose={() => setIsAIPlannerOpen(false)} tripId={tripId} />
         </div>
     );
 }

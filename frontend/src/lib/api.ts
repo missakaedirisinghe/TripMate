@@ -221,7 +221,7 @@ export const votesApi = {
 // ─── Recommendations API ─────────────────────────────────────
 
 export const recommendApi = {
-    getRecommendations: (body: { activities: string[]; bucket_list: string[] }) =>
+    getRecommendations: (body: { activities: string[]; bucket_list: string[]; max_budget?: number; duration?: number }) =>
         apiFetch<RecommendationResult>("/recommend", {
             method: "POST",
             body: JSON.stringify(body),
