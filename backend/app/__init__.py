@@ -1,16 +1,21 @@
 """
 TripMate Flask Application Factory
 
-Initializes extensions, registers blueprints, and loads the ML model.
+Initializes extensions, registers blueprints, and configures
+Socket.IO for real-time collaboration.
 """
 
 from flask import Flask, jsonify
 from flask_cors import CORS
+from flask_mail import Mail
 from flask_migrate import Migrate
+from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 migrate = Migrate()
+socketio = SocketIO()
+mail = Mail()
 
 
 def create_app(config_class=None):
@@ -36,9 +41,21 @@ def create_app(config_class=None):
     db.init_app(app)
     migrate.init_app(app, db)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
+    mail.init_app(app)
+    socketio.init_app(
+        app,
+        cors_allowed_origins="*",
+        async_mode="eventlet",
+        logger=False,
+        engineio_logger=False,
+    )
 
     # Import models so Alembic can detect them
     from app import models  # noqa: F401
+
+    # Register Socket.IO event handlers
+    from app.events import register_socket_events
+    register_socket_events(socketio)
 
     # ML routing and recommendations now utilize dynamic TF-IDF and greedy routing directly
     # via the database (see app.routes.recommendations)
@@ -66,6 +83,9 @@ def create_app(config_class=None):
     from app.routes.recommendations import recommendations_bp
     app.register_blueprint(recommendations_bp, url_prefix="/api")
 
+    from app.routes.notifications import notifications_bp
+    app.register_blueprint(notifications_bp, url_prefix="/api/notifications")
+
     # --- Health Check ---
 
     @app.route("/health")
@@ -75,6 +95,8 @@ def create_app(config_class=None):
             "status": "healthy",
             "service": "TripMate API",
             "ml_model_loaded": True, # Dynamic TF-IDF model is always available
+            "websocket": "enabled",
+            "email": bool(app.config.get("MAIL_USERNAME")),
         })
 
     return app

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
-import { Plane, Search, ArrowRight, User, Calendar, MapPin, ListTodo, ThumbsUp, Wallet } from "lucide-react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
+import { Plane, Search, ArrowRight, User, Calendar, MapPin, ListTodo, ThumbsUp, Wallet, Star, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { destinationsApi, type DestinationResult } from "@/lib/api";
 
 // Animation Variants
 const fadeUp = {
@@ -24,7 +26,62 @@ export default function LandingPage() {
   const { user, loading } = useAuth();
   const isLoggedIn = !loading && !!user;
   const { scrollY } = useScroll();
-  
+  const router = useRouter();
+
+  // Search bar state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<DestinationResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  /** Debounced destination search */
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await destinationsApi.search(value.trim());
+        setSearchResults(res.destinations);
+        setShowDropdown(res.destinations.length > 0);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+  }, []);
+
+  /** Navigate to trip creation with selected destination */
+  const handleDestinationSelect = (dest: DestinationResult) => {
+    setSearchQuery(dest.name);
+    setShowDropdown(false);
+    const params = new URLSearchParams({ destination: dest.name });
+    if (startDate) params.set("start_date", startDate);
+    router.push(isLoggedIn ? `/trip/create?${params}` : `/login?redirect=/trip/create?${params}`);
+  };
+
+  /** Close dropdown on outside click */
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // Fade out the generated mountain landscape to reveal the provided landscape underneath
   const heroBgOpacity = useTransform(scrollY, [0, 600], [1, 0]);
   
@@ -140,36 +197,90 @@ export default function LandingPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8, duration: 0.8 }}
           className="absolute bottom-8 md:bottom-12 w-full max-w-4xl px-4 z-20"
+          ref={dropdownRef}
         >
           <div className="bg-white/90 backdrop-blur-xl rounded-[2rem] p-2 flex flex-col md:flex-row shadow-[0_20px_40px_-15px_rgba(0,0,0,0.3)] border border-white">
-              <div className="flex-1 flex px-6 py-3 flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200">
+              <div className="flex-1 flex px-6 py-3 flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200 relative">
                   <span className="text-xs font-bold text-[#475467] tracking-wider mb-1 uppercase">Location</span>
                   <div className="flex items-center gap-2 text-[#101828]">
-                      <MapPin className="w-5 h-5 text-[#00D1B2]" />
+                      <MapPin className="w-5 h-5 text-[#00D1B2] shrink-0" />
                       <input 
+                          id="hero-search-input"
                           type="text" 
                           placeholder="Where to next?" 
                           className="bg-transparent border-none outline-none text-[#101828] placeholder-[#475467] w-full text-base font-bold uppercase tracking-wide"
-                          readOnly
+                          value={searchQuery}
+                          onChange={(e) => handleSearchChange(e.target.value)}
+                          onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+                          autoComplete="off"
                       />
+                      {isSearching && <Loader2 className="w-4 h-4 text-[#00D1B2] animate-spin shrink-0" />}
                   </div>
+
+                  {/* Search Results Dropdown */}
+                  <AnimatePresence>
+                    {showDropdown && searchResults.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 max-h-72 overflow-y-auto"
+                      >
+                        {searchResults.map((dest) => (
+                          <button
+                            key={dest.id}
+                            onClick={() => handleDestinationSelect(dest)}
+                            className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00D1B2]/20 to-[#0891B2]/20 flex items-center justify-center shrink-0">
+                              <MapPin className="w-4 h-4 text-[#00D1B2]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-[#101828] text-sm">{dest.name}</p>
+                              {dest.description && (
+                                <p className="text-xs text-[#475467] truncate mt-0.5">{dest.description}</p>
+                              )}
+                            </div>
+                            {dest.rating && dest.rating > 0 && (
+                              <div className="flex items-center gap-1 text-xs text-amber-500 font-bold shrink-0">
+                                <Star className="w-3 h-3 fill-amber-400" />
+                                {dest.rating.toFixed(1)}
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
               </div>
               <div className="flex-1 flex px-6 py-3 flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200">
                   <span className="text-xs font-bold text-[#475467] tracking-wider mb-1 uppercase">Dates</span>
                   <div className="flex items-center gap-2 text-[#101828]">
                       <Calendar className="w-5 h-5 text-[#00D1B2]" />
                       <input 
-                          type="text" 
+                          id="hero-date-input"
+                          type="date" 
                           placeholder="Add dates" 
                           className="bg-transparent border-none outline-none text-[#101828] placeholder-[#475467] w-full text-base font-bold uppercase tracking-wide"
-                          readOnly
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
                       />
                   </div>
               </div>
               <div className="px-2 py-2 flex items-center justify-center">
-                  <Link href={isLoggedIn ? "/trip/create" : "/login"} aria-label="Search destinations" className="w-full md:w-16 h-14 rounded-[1.5rem] bg-[#101828] text-white flex items-center justify-center hover:bg-black transition-colors hover:scale-[1.02] active:scale-95 shadow-md">
+                  <button 
+                    onClick={() => {
+                      if (searchQuery.trim()) {
+                        const params = new URLSearchParams({ destination: searchQuery.trim() });
+                        if (startDate) params.set("start_date", startDate);
+                        router.push(isLoggedIn ? `/trip/create?${params}` : `/login?redirect=/trip/create?${params}`);
+                      }
+                    }}
+                    aria-label="Search destinations" 
+                    className="w-full md:w-16 h-14 rounded-[1.5rem] bg-[#101828] text-white flex items-center justify-center hover:bg-black transition-colors hover:scale-[1.02] active:scale-95 shadow-md"
+                  >
                       <Search className="w-6 h-6" />
-                  </Link>
+                  </button>
               </div>
           </div>
         </motion.div>

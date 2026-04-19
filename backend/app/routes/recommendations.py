@@ -2,12 +2,15 @@
 ML Recommendation Blueprint
 
 Provides AI-driven destination recommendations directly from the PostgreSQL database
-using dynamic TF-IDF and greedy pathfinding, along with cost estimation stubs.
+using dynamic TF-IDF and greedy pathfinding, along with ML-based cost estimation.
 """
 
 import math
+import os
 import traceback
 
+import joblib
+import numpy as np
 from flask import Blueprint, current_app, jsonify, request
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -16,6 +19,39 @@ from app.middleware import token_required
 from app.models import Destination
 
 recommendations_bp = Blueprint("recommendations", __name__)
+
+# --- Cost Model Lazy Loading ---
+_cost_model_cache = {}
+
+
+def _load_cost_model(app):
+    """Lazy-load the trained cost estimation model.
+
+    Returns:
+        Dict with 'model', 'feature_columns', etc., or None if not found.
+    """
+    if "model" in _cost_model_cache:
+        return _cost_model_cache
+
+    model_path = app.config.get("COST_MODEL_PATH", "")
+    if not model_path:
+        model_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "models", "cost_model.pkl",
+        )
+
+    if os.path.exists(model_path):
+        try:
+            data = joblib.load(model_path)
+            _cost_model_cache.update(data)
+            app.logger.info(f"Cost model loaded from {model_path} (v{data.get('version', '?')})")
+            return _cost_model_cache
+        except Exception as e:
+            app.logger.error(f"Failed to load cost model: {e}")
+            return None
+    else:
+        app.logger.warning(f"Cost model not found at {model_path}")
+        return None
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -195,7 +231,9 @@ def recommend(current_user):
 @recommendations_bp.route("/estimate-cost", methods=["POST"])
 @token_required
 def estimate_cost(current_user):
-    """Estimate trip costs (placeholder for future Logistic Regression model).
+    """Estimate trip costs using a trained GradientBoosting ML model.
+
+    Falls back to heuristic estimation if the model is not available.
 
     Request Body:
         destination (str): Primary destination
@@ -217,7 +255,69 @@ def estimate_cost(current_user):
     vehicle_type = data.get("vehicle_type", "car")
     accommodation = data.get("accommodation_type", "mid-range")
 
-    # Placeholder cost estimation based on heuristics
+    # Try ML model first
+    model_data = _load_cost_model(current_app)
+
+    if model_data and "model" in model_data:
+        try:
+            model = model_data["model"]
+            feature_cols = model_data["feature_columns"]
+            all_vehicle_types = model_data.get("vehicle_types", ["car", "van", "bus", "train"])
+            all_acc_types = model_data.get("accommodation_types", ["budget", "mid-range", "luxury"])
+
+            # Build feature vector
+            features = {}
+            features["duration_days"] = duration
+            features["num_travelers"] = num_travelers
+
+            for vt in all_vehicle_types:
+                features[f"vehicle_type_{vt}"] = 1 if vehicle_type == vt else 0
+            for at in all_acc_types:
+                features[f"accommodation_type_{at}"] = 1 if accommodation == at else 0
+
+            # Create feature array in correct order
+            feature_vector = np.array([[features.get(col, 0) for col in feature_cols]])
+            total_prediction = float(model.predict(feature_vector)[0])
+            total_prediction = max(total_prediction, 0)
+
+            # Derive per-category breakdown using domain-knowledge proportions
+            accommodation_rates = {"budget": 0.18, "mid-range": 0.30, "luxury": 0.45}
+            transport_rates = {"car": 0.22, "van": 0.28, "bus": 0.10, "train": 0.08}
+            acc_pct = accommodation_rates.get(accommodation, 0.30)
+            transport_pct = transport_rates.get(vehicle_type, 0.22)
+            food_pct = max(0.01, 1.0 - acc_pct - transport_pct - 0.18)  # remainder minus activities
+            activities_pct = 0.18
+
+            acc_cost = round(total_prediction * acc_pct, 2)
+            transport_cost = round(total_prediction * transport_pct, 2)
+            food_cost = round(total_prediction * food_pct, 2)
+            activities_cost = round(total_prediction * activities_pct, 2)
+            total = round(acc_cost + transport_cost + food_cost + activities_cost, 2)
+            per_person = round(total / max(num_travelers, 1), 2)
+
+            return jsonify({
+                "estimation": {
+                    "accommodation": acc_cost,
+                    "transport": transport_cost,
+                    "food": food_cost,
+                    "activities": activities_cost,
+                    "total": total,
+                    "per_person": per_person,
+                },
+                "parameters": {
+                    "duration_days": duration,
+                    "num_travelers": num_travelers,
+                    "vehicle_type": vehicle_type,
+                    "accommodation_type": accommodation,
+                },
+                "model_version": model_data.get("version", "unknown"),
+                "note": "ML-powered estimate using GradientBoosting model trained on Sri Lankan travel data.",
+            }), 200
+
+        except Exception as e:
+            current_app.logger.error(f"ML cost estimation failed, falling back to heuristic: {e}")
+
+    # Fallback: heuristic estimation
     accommodation_rates = {
         "budget": 3000,
         "mid-range": 8000,
@@ -254,5 +354,5 @@ def estimate_cost(current_user):
             "vehicle_type": vehicle_type,
             "accommodation_type": accommodation,
         },
-        "note": "This is a heuristic estimate.",
+        "note": "Heuristic estimate (ML model not available).",
     }), 200

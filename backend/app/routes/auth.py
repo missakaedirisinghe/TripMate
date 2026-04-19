@@ -2,6 +2,7 @@
 Authentication Blueprint
 
 Handles user registration, login, and profile management via JWT tokens.
+Automatically processes pending trip invitations on registration.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from app import db
 from app.middleware import token_required
-from app.models import User
+from app.models import PendingInvite, TripMember, User
+from app.notifications import create_notification
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -20,6 +22,9 @@ auth_bp = Blueprint("auth", __name__)
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Register a new user account.
+
+    Automatically accepts any pending trip invitations for the user's email.
+    Supports an optional `invite` query parameter containing an invite token.
 
     Request Body:
         name (str): Full name
@@ -61,16 +66,68 @@ def register():
         password_hash=generate_password_hash(password),
     )
     db.session.add(user)
+    db.session.flush()  # Get user.id before commit
+
+    # Process pending invitations for this email
+    pending_invites = PendingInvite.query.filter_by(
+        email=email, accepted=False
+    ).all()
+
+    accepted_trips = []
+    now = datetime.now(timezone.utc)
+
+    for invite in pending_invites:
+        if invite.expires_at < now:
+            continue  # Skip expired invites
+
+        # Check if not already a member (edge case)
+        existing = TripMember.query.filter_by(
+            trip_id=invite.trip_id, user_id=user.id
+        ).first()
+        if existing:
+            invite.accepted = True
+            continue
+
+        # Add user to the trip
+        member = TripMember(
+            trip_id=invite.trip_id,
+            user_id=user.id,
+            role=invite.role,
+        )
+        db.session.add(member)
+
+        # Mark invite as accepted
+        invite.accepted = True
+
+        # Create notification
+        trip_title = invite.trip.title if invite.trip else "a trip"
+        inviter_name = invite.inviter.name if invite.inviter else "Someone"
+        create_notification(
+            user_id=user.id,
+            notification_type="invite",
+            title="Trip Invitation Accepted",
+            message=f"You've been added to '{trip_title}' (invited by {inviter_name})",
+            trip_id=invite.trip_id,
+            data={"trip_title": trip_title, "inviter_name": inviter_name},
+        )
+        accepted_trips.append(trip_title)
+
     db.session.commit()
 
     # Generate token
     token = _generate_token(user)
 
-    return jsonify({
+    response_data = {
         "message": "Account created successfully",
         "token": token,
         "user": user.to_dict(),
-    }), 201
+    }
+
+    if accepted_trips:
+        response_data["accepted_invites"] = accepted_trips
+        response_data["message"] += f" — you've been added to {len(accepted_trips)} trip(s)!"
+
+    return jsonify(response_data), 201
 
 
 @auth_bp.route("/login", methods=["POST"])

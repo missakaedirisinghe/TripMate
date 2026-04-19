@@ -399,3 +399,135 @@ class Destination(db.Model):
 
     def __repr__(self):
         return f"<Destination {self.name}>"
+
+
+class Notification(db.Model):
+    """In-app notification for user events."""
+
+    __tablename__ = "notifications"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    user_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    trip_id = db.Column(
+        db.String(36), db.ForeignKey("trips.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    type = db.Column(
+        db.String(50), nullable=False
+    )  # invite, itinerary_change, expense_added, vote_cast, member_joined, settlement
+    title = db.Column(db.String(255), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    is_read = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    data = db.Column(db.JSON, default=dict)
+    created_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationships
+    user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
+    trip = db.relationship("Trip", backref=db.backref("trip_notifications", lazy="dynamic"))
+
+    def to_dict(self):
+        """Serialize notification to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "trip_id": self.trip_id,
+            "type": self.type,
+            "title": self.title,
+            "message": self.message,
+            "is_read": self.is_read,
+            "data": self.data or {},
+            "created_at": self.created_at.isoformat(),
+        }
+
+    def __repr__(self):
+        return f"<Notification {self.type} for {self.user_id}>"
+
+
+class Settlement(db.Model):
+    """Expense settlement between trip members."""
+
+    __tablename__ = "settlements"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    trip_id = db.Column(
+        db.String(36), db.ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    from_user_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    to_user_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
+    note = db.Column(db.String(500), nullable=True)
+    settled_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationships
+    trip = db.relationship("Trip", backref=db.backref("settlements", lazy="dynamic"))
+    from_user = db.relationship("User", foreign_keys=[from_user_id], backref="settlements_paid")
+    to_user = db.relationship("User", foreign_keys=[to_user_id], backref="settlements_received")
+
+    def to_dict(self):
+        """Serialize settlement to dictionary."""
+        return {
+            "id": self.id,
+            "trip_id": self.trip_id,
+            "from_user_id": self.from_user_id,
+            "from_user_name": self.from_user.name if self.from_user else None,
+            "to_user_id": self.to_user_id,
+            "to_user_name": self.to_user.name if self.to_user else None,
+            "amount": float(self.amount),
+            "note": self.note,
+            "settled_at": self.settled_at.isoformat(),
+        }
+
+    def __repr__(self):
+        return f"<Settlement {self.from_user_id} -> {self.to_user_id} LKR {self.amount}>"
+
+
+class PendingInvite(db.Model):
+    """Pending trip invitation for non-registered users."""
+
+    __tablename__ = "pending_invites"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    trip_id = db.Column(
+        db.String(36), db.ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    email = db.Column(db.String(255), nullable=False, index=True)
+    role = db.Column(db.String(20), nullable=False, default="member")
+    token = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    invited_by = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    expires_at = db.Column(db.DateTime, nullable=False)
+    accepted = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Relationships
+    trip = db.relationship("Trip", backref=db.backref("pending_invites", lazy="dynamic"))
+    inviter = db.relationship("User", backref="sent_invites")
+
+    def to_dict(self):
+        """Serialize pending invite to dictionary."""
+        return {
+            "id": self.id,
+            "trip_id": self.trip_id,
+            "email": self.email,
+            "role": self.role,
+            "invited_by": self.invited_by,
+            "inviter_name": self.inviter.name if self.inviter else None,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat(),
+            "accepted": self.accepted,
+        }
+
+    def __repr__(self):
+        return f"<PendingInvite {self.email} -> trip {self.trip_id}>"

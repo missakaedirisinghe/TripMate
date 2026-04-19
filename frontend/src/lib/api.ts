@@ -10,7 +10,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/a
 /**
  * Get the stored JWT token from localStorage.
  */
-function getToken(): string | null {
+export function getToken(): string | null {
     if (typeof window === "undefined") return null;
     return localStorage.getItem("tripmate_token");
 }
@@ -81,7 +81,7 @@ export class ApiError extends Error {
 
 export const authApi = {
     register: (body: { name: string; email: string; password: string }) =>
-        apiFetch<{ token: string; user: User; message: string }>("/auth/register", {
+        apiFetch<{ token: string; user: User; message: string; accepted_invites?: string[] }>("/auth/register", {
             method: "POST",
             body: JSON.stringify(body),
         }),
@@ -127,10 +127,13 @@ export const tripsApi = {
         apiFetch<{ message: string }>(`/trips/${tripId}`, { method: "DELETE" }),
 
     invite: (tripId: string, email: string, role?: string) =>
-        apiFetch<{ member: TripMember; message: string }>(`/trips/${tripId}/invite`, {
-            method: "POST",
-            body: JSON.stringify({ email, role }),
-        }),
+        apiFetch<{ member?: TripMember; invite?: PendingInvite; message: string; email_sent?: boolean }>(
+            `/trips/${tripId}/invite`,
+            {
+                method: "POST",
+                body: JSON.stringify({ email, role }),
+            }
+        ),
 
     listMembers: (tripId: string) =>
         apiFetch<{ members: TripMember[] }>(`/trips/${tripId}/members`),
@@ -189,6 +192,12 @@ export const expensesApi = {
             body: JSON.stringify(body),
         }),
 
+    update: (tripId: string, expenseId: string, body: Partial<Expense>) =>
+        apiFetch<{ expense: Expense; message: string }>(`/trips/${tripId}/expenses/${expenseId}`, {
+            method: "PUT",
+            body: JSON.stringify(body),
+        }),
+
     delete: (tripId: string, expenseId: string) =>
         apiFetch<{ message: string }>(`/trips/${tripId}/expenses/${expenseId}`, {
             method: "DELETE",
@@ -196,6 +205,21 @@ export const expensesApi = {
 
     budgetSummary: (tripId: string) =>
         apiFetch<BudgetSummary>(`/trips/${tripId}/budget-summary`),
+
+    /** Get optimized debt settlement between members */
+    getDebts: (tripId: string) =>
+        apiFetch<DebtSummary>(`/trips/${tripId}/debts`),
+
+    /** List recorded settlements */
+    listSettlements: (tripId: string) =>
+        apiFetch<{ settlements: Settlement[] }>(`/trips/${tripId}/settlements`),
+
+    /** Record a settlement payment */
+    addSettlement: (tripId: string, body: { to_user_id: string; amount: number; note?: string }) =>
+        apiFetch<{ settlement: Settlement; message: string }>(`/trips/${tripId}/settlements`, {
+            method: "POST",
+            body: JSON.stringify(body),
+        }),
 };
 
 // ─── Votes API ───────────────────────────────────────────────
@@ -238,6 +262,43 @@ export const recommendApi = {
             method: "POST",
             body: JSON.stringify(body),
         }),
+};
+
+// ─── Notifications API ───────────────────────────────────────
+
+export const notificationsApi = {
+    /** List notifications with pagination */
+    list: (page = 1, perPage = 20, unreadOnly = false) =>
+        apiFetch<NotificationListResponse>(
+            `/notifications?page=${page}&per_page=${perPage}&unread_only=${unreadOnly}`
+        ),
+
+    /** Get unread notification count */
+    unreadCount: () =>
+        apiFetch<{ unread_count: number }>("/notifications/unread-count"),
+
+    /** Mark a single notification as read */
+    markRead: (notificationId: string) =>
+        apiFetch<{ notification: AppNotification; message: string }>(
+            `/notifications/${notificationId}/read`,
+            { method: "PUT" }
+        ),
+
+    /** Mark all notifications as read */
+    markAllRead: () =>
+        apiFetch<{ count: number; message: string }>("/notifications/read-all", {
+            method: "PUT",
+        }),
+};
+
+// ─── Destinations API (public, no auth) ──────────────────────
+
+export const destinationsApi = {
+    /** Search destinations by name */
+    search: (query: string) =>
+        apiFetch<{ destinations: DestinationResult[]; count: number }>(
+            `/destinations?search=${encodeURIComponent(query)}`
+        ),
 };
 
 // ─── Type Definitions ────────────────────────────────────────
@@ -348,6 +409,73 @@ export interface BudgetSummary {
     }[];
 }
 
+export interface Settlement {
+    id: string;
+    trip_id: string;
+    from_user_id: string;
+    from_user_name?: string;
+    to_user_id: string;
+    to_user_name?: string;
+    amount: number;
+    note?: string;
+    settled_at: string;
+}
+
+export interface DebtSummary {
+    debts: {
+        from_user_id: string;
+        from_user_name?: string;
+        to_user_id: string;
+        to_user_name?: string;
+        amount: number;
+    }[];
+    all_settled: boolean;
+}
+
+export interface PendingInvite {
+    id: string;
+    trip_id: string;
+    email: string;
+    role: string;
+    invited_by?: string;
+    inviter_name?: string;
+    created_at: string;
+    expires_at: string;
+    accepted: boolean;
+}
+
+export interface AppNotification {
+    id: string;
+    user_id: string;
+    trip_id?: string;
+    type: string;
+    title: string;
+    message: string;
+    is_read: boolean;
+    data: Record<string, unknown>;
+    created_at: string;
+}
+
+export interface NotificationListResponse {
+    notifications: AppNotification[];
+    total: number;
+    page: number;
+    pages: number;
+    has_next: boolean;
+}
+
+export interface DestinationResult {
+    id: string;
+    name: string;
+    address?: string;
+    lat: number;
+    lng: number;
+    rating?: number;
+    activities: string[];
+    image_url?: string;
+    description?: string;
+}
+
 export interface RecommendationResult {
     recommended_route: {
         name: string;
@@ -371,5 +499,6 @@ export interface CostEstimation {
         per_person: number;
     };
     parameters: Record<string, unknown>;
+    model_version?: string;
     note: string;
 }

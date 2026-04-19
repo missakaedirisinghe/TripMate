@@ -3,10 +3,11 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-    Menu, X, Compass, Home, Map, PlusCircle, Settings, Bell, Search, User, LogOut
+    Menu, X, Compass, Home, Map, PlusCircle, Settings, Search, User, LogOut
 } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/Input";
+import { NotificationBell } from "@/components/ui/NotificationBell";
 import { useAuth } from "@/lib/auth-context";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -101,10 +102,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <button className="p-2 hover:bg-surface rounded-full transition-colors relative hidden sm:block">
-                            <Bell className="w-5 h-5 text-foreground/80" />
-                            <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
-                        </button>
+                        <div className="hidden sm:block">
+                            <NotificationBell />
+                        </div>
                         
                         {/* Mobile Menu Toggle */}
                         <button 

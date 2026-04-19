@@ -2,14 +2,15 @@
 Voting Blueprint
 
 Group decision-making through votes on destinations, routes, and activities.
+Emits real-time events via Socket.IO and creates notifications.
 """
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import func
 
-from app import db
+from app import db, socketio
 from app.middleware import token_required, trip_member_required
 from app.models import Vote
+from app.notifications import notify_trip_members
 
 votes_bp = Blueprint("votes", __name__)
 
@@ -63,7 +64,26 @@ def cast_vote(trip_id, current_user, membership):
         target_value=data.get("target_value"),
     )
     db.session.add(vote)
+
+    # Notify trip members
+    target_label = data.get("target_value") or target_id
+    notify_trip_members(
+        trip_id=trip_id,
+        notification_type="vote_cast",
+        title="New Vote",
+        message=f"{current_user.name} voted for '{target_label}' ({vote_type})",
+        exclude_user_id=current_user.id,
+        data={"vote_type": vote_type, "target_value": target_label},
+    )
+
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "vote_updated",
+        {"action": "vote_cast", "vote": vote.to_dict(), "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
 
     return jsonify({"message": "Vote cast", "vote": vote.to_dict()}), 201
 
@@ -132,5 +152,12 @@ def retract_vote(trip_id, current_user, membership, vote_id):
 
     db.session.delete(vote)
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "vote_updated",
+        {"action": "vote_retracted", "vote_id": vote_id, "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
 
     return jsonify({"message": "Vote retracted"}), 200

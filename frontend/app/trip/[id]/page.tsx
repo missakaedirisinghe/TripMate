@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, use } from "react";
+import React, { useState, useEffect, useMemo, use, useCallback } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -8,13 +8,15 @@ import { TripMap, type MapMarker } from "@/components/workspace/TripMap";
 import { WeatherPanel } from "@/components/workspace/WeatherPanel";
 import { VideoPanel } from "@/components/workspace/VideoPanel";
 import { VotingPanel } from "@/components/workspace/VotingPanel";
+import { SettlementPanel } from "@/components/workspace/SettlementPanel";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     MapPin, Calendar, Wallet, Users, Plus, Share2, Sparkles, Trash2,
-    Map, CloudSun, PlayCircle, Vote
+    Map, CloudSun, PlayCircle, Vote, Handshake, Wifi, WifiOff
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useSocket } from "@/lib/useSocket";
 import {
     tripsApi, itineraryApi, expensesApi,
     type Trip, type ItineraryDay, type Expense, type TripMember
@@ -53,6 +55,7 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
         { id: "itinerary", label: "Itinerary", icon: Calendar },
         { id: "map", label: "Map", icon: Map },
         { id: "expenses", label: "Expenses", icon: Wallet },
+        { id: "settle", label: "Settle Up", icon: Handshake },
         { id: "weather", label: "Weather", icon: CloudSun },
         { id: "videos", label: "Videos", icon: PlayCircle },
         { id: "votes", label: "Votes", icon: Vote },
@@ -106,6 +109,46 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
         };
         loadData();
     }, [tripId, user, authLoading, router]);
+
+    /** Refresh functions for Socket.IO real-time updates */
+    const refreshItinerary = useCallback(async () => {
+        try {
+            const res = await itineraryApi.listDays(tripId);
+            setDays(res.days);
+        } catch { /* ignore */ }
+    }, [tripId]);
+
+    const refreshExpenses = useCallback(async () => {
+        try {
+            const res = await expensesApi.list(tripId);
+            setExpenses(res.expenses);
+        } catch { /* ignore */ }
+    }, [tripId]);
+
+    const refreshMembers = useCallback(async () => {
+        try {
+            const res = await tripsApi.listMembers(tripId);
+            setMembers(res.members);
+        } catch { /* ignore */ }
+    }, [tripId]);
+
+    const refreshTrip = useCallback(async () => {
+        try {
+            const res = await tripsApi.get(tripId);
+            setTrip(res.trip);
+        } catch { /* ignore */ }
+    }, [tripId]);
+
+    /** WebSocket integration for real-time collaboration */
+    const { isConnected, onlineUsers } = useSocket({
+        tripId,
+        onItineraryUpdate: refreshItinerary,
+        onExpenseUpdate: refreshExpenses,
+        onVoteUpdate: () => {}, // VotingPanel handles its own refresh
+        onMemberUpdate: refreshMembers,
+        onTripUpdate: refreshTrip,
+        onSettlementUpdate: refreshExpenses,
+    });
 
     const handleAddDay = async () => {
         const nextNum = days.length + 1;
@@ -241,6 +284,16 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                 <Wallet className="w-4 h-4 text-secondary" />
                                 LKR {trip.budget_limit ? `${(trip.budget_limit / 1000).toFixed(0)}k` : "N/A"}
                             </span>
+                        </div>
+                        {/* Live Connection Indicator */}
+                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            isConnected ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                            {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                            {isConnected ? 'Live' : 'Offline'}
+                            {onlineUsers.length > 0 && isConnected && (
+                                <span className="text-foreground/40 ml-1">· {onlineUsers.length} online</span>
+                            )}
                         </div>
                     </div>
 
@@ -414,6 +467,11 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                         ))}
                                     </div>
                                 </div>
+                            )}
+
+                            {/* SETTLE UP TAB */}
+                            {activeTab === "settle" && user && (
+                                <SettlementPanel tripId={tripId} currentUserId={user.id} />
                             )}
 
                             {/* MEMBERS TAB */}

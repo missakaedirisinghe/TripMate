@@ -2,13 +2,16 @@
 Expense Tracking Blueprint
 
 Manages expenses with equal, percentage, and custom split options.
+Includes settlement flow for marking debts as paid.
+Emits real-time events via Socket.IO and creates notifications.
 """
 
 from flask import Blueprint, jsonify, request
 
-from app import db
+from app import db, socketio
 from app.middleware import token_required, trip_member_required
-from app.models import Expense, Trip, TripMember
+from app.models import Expense, Settlement, Trip, TripMember
+from app.notifications import create_notification, notify_trip_members
 
 expenses_bp = Blueprint("expenses", __name__)
 
@@ -105,7 +108,25 @@ def add_expense(trip_id, current_user, membership):
         split_details=split_details,
     )
     db.session.add(expense)
+
+    # Notify trip members
+    notify_trip_members(
+        trip_id=trip_id,
+        notification_type="expense_added",
+        title="Expense Added",
+        message=f"{current_user.name} added '{title}' — LKR {amount:,.0f}",
+        exclude_user_id=current_user.id,
+        data={"expense_title": title, "amount": amount},
+    )
+
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "expense_updated",
+        {"action": "expense_added", "expense": expense.to_dict(), "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
 
     return jsonify({"message": "Expense added", "expense": expense.to_dict()}), 201
 
@@ -134,6 +155,14 @@ def update_expense(trip_id, current_user, membership, expense_id):
         expense.split_details = data["split_details"]
 
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "expense_updated",
+        {"action": "expense_updated", "expense": expense.to_dict(), "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
+
     return jsonify({"message": "Expense updated", "expense": expense.to_dict()}), 200
 
 
@@ -149,6 +178,14 @@ def delete_expense(trip_id, current_user, membership, expense_id):
     expense = Expense.query.filter_by(id=expense_id, trip_id=trip_id).first_or_404()
     db.session.delete(expense)
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "expense_updated",
+        {"action": "expense_deleted", "expense_id": expense_id, "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
+
     return jsonify({"message": "Expense deleted"}), 200
 
 
@@ -216,3 +253,182 @@ def budget_summary(trip_id, current_user, membership):
         "expense_count": len(expenses),
         "member_balances": list(member_balances.values()),
     }), 200
+
+
+# --- Settlement Flow ---
+
+
+@expenses_bp.route("/<trip_id>/debts", methods=["GET"])
+@token_required
+@trip_member_required
+def get_debts(trip_id, current_user, membership):
+    """Calculate optimized debt settlement using debt simplification.
+
+    Minimizes the number of transactions needed to settle all balances.
+
+    Returns:
+        200: List of optimized debt transfers
+    """
+    expenses = Expense.query.filter_by(trip_id=trip_id).all()
+    members = TripMember.query.filter_by(trip_id=trip_id).all()
+    settlements = Settlement.query.filter_by(trip_id=trip_id).all()
+
+    # Build balance map
+    balances = {}
+    for member in members:
+        balances[member.user_id] = {
+            "user_id": member.user_id,
+            "user_name": member.user.name if member.user else None,
+            "net": 0.0,
+        }
+
+    for expense in expenses:
+        if expense.paid_by and expense.paid_by in balances:
+            balances[expense.paid_by]["net"] += float(expense.amount)
+
+        details = expense.split_details or {}
+        if expense.split_type == "equal" and not details:
+            per_person = float(expense.amount) / max(len(members), 1)
+            for m in members:
+                balances[m.user_id]["net"] -= per_person
+        elif expense.split_type == "percentage":
+            for uid, pct in details.items():
+                if uid in balances:
+                    balances[uid]["net"] -= float(expense.amount) * float(pct) / 100
+        else:
+            for uid, amt in details.items():
+                if uid in balances:
+                    balances[uid]["net"] -= float(amt)
+
+    # Apply existing settlements
+    for s in settlements:
+        if s.from_user_id in balances:
+            balances[s.from_user_id]["net"] += float(s.amount)
+        if s.to_user_id in balances:
+            balances[s.to_user_id]["net"] -= float(s.amount)
+
+    # Debt simplification: greedy algorithm to minimize transactions
+    creditors = []  # People who are owed money (positive balance)
+    debtors = []    # People who owe money (negative balance)
+
+    for uid, info in balances.items():
+        net = round(info["net"], 2)
+        if net > 0.01:
+            creditors.append({"user_id": uid, "user_name": info["user_name"], "amount": net})
+        elif net < -0.01:
+            debtors.append({"user_id": uid, "user_name": info["user_name"], "amount": abs(net)})
+
+    # Sort for deterministic results
+    creditors.sort(key=lambda x: x["amount"], reverse=True)
+    debtors.sort(key=lambda x: x["amount"], reverse=True)
+
+    debts = []
+    ci, di = 0, 0
+    while ci < len(creditors) and di < len(debtors):
+        transfer = min(creditors[ci]["amount"], debtors[di]["amount"])
+        if transfer > 0.01:
+            debts.append({
+                "from_user_id": debtors[di]["user_id"],
+                "from_user_name": debtors[di]["user_name"],
+                "to_user_id": creditors[ci]["user_id"],
+                "to_user_name": creditors[ci]["user_name"],
+                "amount": round(transfer, 2),
+            })
+        creditors[ci]["amount"] -= transfer
+        debtors[di]["amount"] -= transfer
+        if creditors[ci]["amount"] < 0.01:
+            ci += 1
+        if debtors[di]["amount"] < 0.01:
+            di += 1
+
+    return jsonify({
+        "debts": debts,
+        "all_settled": len(debts) == 0,
+    }), 200
+
+
+@expenses_bp.route("/<trip_id>/settlements", methods=["GET"])
+@token_required
+@trip_member_required
+def list_settlements(trip_id, current_user, membership):
+    """List all settlements for a trip.
+
+    Returns:
+        200: List of settlements
+    """
+    settlements = Settlement.query.filter_by(trip_id=trip_id).order_by(
+        Settlement.settled_at.desc()
+    ).all()
+
+    return jsonify({
+        "settlements": [s.to_dict() for s in settlements],
+    }), 200
+
+
+@expenses_bp.route("/<trip_id>/settlements", methods=["POST"])
+@token_required
+@trip_member_required
+def add_settlement(trip_id, current_user, membership):
+    """Record a settlement payment between members.
+
+    Request Body:
+        to_user_id (str): User ID of the person being paid
+        amount (float): Settlement amount in LKR
+        note (str, optional): Settlement note
+
+    Returns:
+        201: Settlement recorded
+    """
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Request body is required"}), 400
+
+    to_user_id = data.get("to_user_id")
+    amount = data.get("amount")
+
+    if not to_user_id or amount is None:
+        return jsonify({"error": "to_user_id and amount are required"}), 400
+
+    try:
+        amount = float(amount)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Amount must be a number"}), 400
+
+    if amount <= 0:
+        return jsonify({"error": "Amount must be positive"}), 400
+
+    # Verify target is a trip member
+    target_member = TripMember.query.filter_by(trip_id=trip_id, user_id=to_user_id).first()
+    if not target_member:
+        return jsonify({"error": "Target user is not a member of this trip"}), 404
+
+    settlement = Settlement(
+        trip_id=trip_id,
+        from_user_id=current_user.id,
+        to_user_id=to_user_id,
+        amount=amount,
+        note=data.get("note"),
+    )
+    db.session.add(settlement)
+
+    # Notify the recipient
+    create_notification(
+        user_id=to_user_id,
+        notification_type="settlement",
+        title="Payment Received",
+        message=f"{current_user.name} settled LKR {amount:,.0f} with you",
+        trip_id=trip_id,
+        data={"amount": amount, "from_user_name": current_user.name},
+    )
+
+    db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "settlement_recorded",
+        {"settlement": settlement.to_dict(), "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
+
+    return jsonify({"message": "Settlement recorded", "settlement": settlement.to_dict()}), 201

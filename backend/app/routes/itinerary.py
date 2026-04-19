@@ -2,15 +2,17 @@
 Itinerary & Activities Blueprint
 
 Manages days and activities within a trip itinerary.
+Emits real-time events via Socket.IO and creates notifications.
 """
 
 from datetime import date
 
 from flask import Blueprint, jsonify, request
 
-from app import db
+from app import db, socketio
 from app.middleware import token_required, trip_member_required
 from app.models import Activity, ItineraryDay, Trip
+from app.notifications import notify_trip_members
 
 itinerary_bp = Blueprint("itinerary", __name__)
 
@@ -57,7 +59,25 @@ def add_day(trip_id, current_user, membership):
         order_index=data.get("order_index", data["day_number"] - 1),
     )
     db.session.add(day)
+
+    # Notify members
+    notify_trip_members(
+        trip_id=trip_id,
+        notification_type="itinerary_change",
+        title="Itinerary Updated",
+        message=f"{current_user.name} added Day {data['day_number']}",
+        exclude_user_id=current_user.id,
+        data={"action": "day_added", "day_number": data["day_number"]},
+    )
+
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "itinerary_updated",
+        {"action": "day_added", "day": day.to_dict(), "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
 
     return jsonify({"message": "Day added", "day": day.to_dict()}), 201
 
@@ -82,6 +102,14 @@ def update_day(trip_id, current_user, membership, day_id):
         day.order_index = data["order_index"]
 
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "itinerary_updated",
+        {"action": "day_updated", "day": day.to_dict(), "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
+
     return jsonify({"message": "Day updated", "day": day.to_dict()}), 200
 
 
@@ -95,8 +123,17 @@ def delete_day(trip_id, current_user, membership, day_id):
         200: Day deleted
     """
     day = ItineraryDay.query.filter_by(id=day_id, trip_id=trip_id).first_or_404()
+    day_number = day.day_number
     db.session.delete(day)
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "itinerary_updated",
+        {"action": "day_deleted", "day_id": day_id, "day_number": day_number, "user_name": current_user.name},
+        to=f"trip_{trip_id}",
+    )
+
     return jsonify({"message": "Day deleted"}), 200
 
 
@@ -144,7 +181,30 @@ def add_activity(trip_id, current_user, membership, day_id):
         order_index=data.get("order_index", next_order),
     )
     db.session.add(activity)
+
+    # Notify members
+    notify_trip_members(
+        trip_id=trip_id,
+        notification_type="itinerary_change",
+        title="Activity Added",
+        message=f"{current_user.name} added '{data['title'].strip()}' to Day {day.day_number}",
+        exclude_user_id=current_user.id,
+        data={"action": "activity_added", "activity_title": data["title"].strip()},
+    )
+
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "itinerary_updated",
+        {
+            "action": "activity_added",
+            "day_id": day_id,
+            "activity": activity.to_dict(),
+            "user_name": current_user.name,
+        },
+        to=f"trip_{trip_id}",
+    )
 
     return jsonify({"message": "Activity added", "activity": activity.to_dict()}), 201
 
@@ -180,6 +240,19 @@ def update_activity(trip_id, current_user, membership, day_id, activity_id):
         activity.order_index = data["order_index"]
 
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "itinerary_updated",
+        {
+            "action": "activity_updated",
+            "day_id": day_id,
+            "activity": activity.to_dict(),
+            "user_name": current_user.name,
+        },
+        to=f"trip_{trip_id}",
+    )
+
     return jsonify({"message": "Activity updated", "activity": activity.to_dict()}), 200
 
 
@@ -197,4 +270,17 @@ def delete_activity(trip_id, current_user, membership, day_id, activity_id):
 
     db.session.delete(activity)
     db.session.commit()
+
+    # Emit real-time event
+    socketio.emit(
+        "itinerary_updated",
+        {
+            "action": "activity_deleted",
+            "day_id": day_id,
+            "activity_id": activity_id,
+            "user_name": current_user.name,
+        },
+        to=f"trip_{trip_id}",
+    )
+
     return jsonify({"message": "Activity deleted"}), 200

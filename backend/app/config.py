@@ -32,10 +32,29 @@ class Config:
         os.environ.get("MODEL_PATH")
         or "../Prediction Model/Recommendation Model.pkl"
     )
+    COST_MODEL_PATH = os.environ.get(
+        "COST_MODEL_PATH",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "cost_model.pkl"),
+    )
 
     # External APIs
     OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY", "")
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+
+    # Flask-Mail (Email Invitations)
+    MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
+    MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
+    MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "false").lower() == "true"
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.environ.get(
+        "MAIL_DEFAULT_SENDER",
+        os.environ.get("MAIL_USERNAME", "noreply@tripmate.app"),
+    )
+
+    # Frontend URL (for invite links)
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 
 class TestConfig(Config):
