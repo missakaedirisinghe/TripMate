@@ -82,8 +82,27 @@ def create_trip(current_user):
     # Add creator as owner member
     member = TripMember(trip_id=trip.id, user_id=current_user.id, role="owner")
     db.session.add(member)
+    
+    # Process invited friends immediately 
+    invited_friends = data.get("invited_friends", [])
+    if isinstance(invited_friends, list):
+        for friend_id in invited_friends:
+            f_member = TripMember(trip_id=trip.id, user_id=friend_id, role="member")
+            db.session.add(f_member)
+            
+            # Send notification
+            create_notification(
+                user_id=friend_id,
+                notification_type="invite",
+                title="Trip Invitation",
+                message=f"{current_user.name} added you to '{trip.title}'",
+                trip_id=trip.id,
+                data={"inviter_name": current_user.name, "trip_title": trip.title},
+            )
+
     db.session.commit()
 
+    # Pre-calculate budgets and fetch members for the return object
     return jsonify({
         "message": "Trip created",
         "trip": trip.to_dict(include_members=True, include_budget=True),
@@ -174,6 +193,38 @@ def delete_trip(trip_id, current_user, membership):
     db.session.commit()
 
     return jsonify({"message": "Trip deleted"}), 200
+
+
+@trips_bp.route("/<trip_id>/members/<target_user_id>", methods=["DELETE"])
+@token_required
+@trip_member_required
+def remove_member(trip_id, current_user, membership, target_user_id):
+    """Remove a member from the trip.
+    
+    Only the trip creator/owner can do this. Cannot remove the creator.
+    """
+    if membership.role != "owner":
+        return jsonify({"error": "Only the trip owner can remove members"}), 403
+
+    trip = Trip.query.get_or_404(trip_id)
+    if trip.creator_id == target_user_id:
+        return jsonify({"error": "Cannot remove the trip creator"}), 400
+        
+    target_membership = TripMember.query.filter_by(trip_id=trip_id, user_id=target_user_id).first()
+    if not target_membership:
+        return jsonify({"error": "Member not found in trip"}), 404
+        
+    db.session.delete(target_membership)
+    db.session.commit()
+    
+    # Notify sockets
+    socketio.emit(
+        "member_removed",
+        {"user_id": target_user_id, "trip_id": trip_id},
+        to=f"trip_{trip_id}",
+    )
+    
+    return jsonify({"message": "Member removed successfully"}), 200
 
 
 @trips_bp.route("/<trip_id>/invite", methods=["POST"])

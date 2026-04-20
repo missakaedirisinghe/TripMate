@@ -11,7 +11,16 @@ interface AIPlannerPanelProps {
     isOpen: boolean;
     onClose: () => void;
     tripId?: string;
-    onApply?: (data: { destination: string; budget: string; activities: string[]; route: RecommendationResult["recommended_route"]; duration: number }) => void;
+    onApply?: (data: {
+        destination: string;
+        budget: string;
+        activities: string[];
+        route: RecommendationResult["recommended_route"];
+        duration: number;
+        startDate: string;
+        endDate: string;
+        destinationDays?: Record<string, number>;
+    }) => void;
 }
 
 export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPanelProps) {
@@ -26,8 +35,26 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
         activities: string[];
         duration: number;
         maxBudget?: number;
+        destinationDays?: Record<string, number>;
+        destination: string;
     }>(null);
     const [error, setError] = useState("");
+
+    /** Parse multi-destination intent like "3 days in Mirissa and 2 days in Kandy" */
+    const parseDestinationDays = (text: string): Record<string, number> | null => {
+        // Lookahead to stop capturing place names when encountering common prepositions, numbers, or end of string
+        const regex = /(\d+)\s*(?:days?)\s+(?:in|at)\s+([A-Za-z\s]+?)(?=\s+(?:with|from|to|for|budget|and)\b|,|$|\d)/gi;
+        const result: Record<string, number> = {};
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const days = parseInt(match[1], 10);
+            const dest = match[2].trim();
+            if (days > 0 && dest) {
+                result[dest] = days;
+            }
+        }
+        return Object.keys(result).length >= 2 ? result : null;
+    };
 
     const handleGenerate = async () => {
         if (!query) return;
@@ -59,13 +86,27 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
             maxBudget = parseInt(kMatch[1], 10) * 1000;
         }
 
+        // Parse multi-destination intent
+        const destinationDays = parseDestinationDays(query);
+        if (destinationDays) {
+            // If multi-destination is detected, compute total duration from it
+            duration = Object.values(destinationDays).reduce((sum, d) => sum + d, 0);
+            // Add all specified destinations to bucket list
+            for (const dest of Object.keys(destinationDays)) {
+                if (!bucketList.some(b => b.toLowerCase() === dest.toLowerCase())) {
+                    bucketList.push(dest);
+                }
+            }
+        }
+
         try {
-            // Try real recommendation API
+            // Try real recommendation API with optional destination_days
             const recResult = await recommendApi.getRecommendations({ 
                 activities, 
                 bucket_list: bucketList,
                 max_budget: maxBudget,
-                duration
+                duration,
+                destination_days: destinationDays || undefined,
             });
 
             // Also get cost estimation based on AI suggestions
@@ -77,6 +118,10 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                 accommodation_type: "mid-range",
             });
 
+            const combinedDest = destinationDays
+                ? Object.keys(destinationDays).join(", ")
+                : (recResult.recommended_route[0]?.name || bucketList[0] || "Sri Lanka");
+
             setResult({
                 feasibility: "High",
                 feasibilityColor: "text-green-500",
@@ -85,7 +130,9 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                 route: recResult.recommended_route,
                 activities,
                 duration,
-                maxBudget
+                maxBudget,
+                destinationDays: destinationDays || undefined,
+                destination: combinedDest,
             });
         } catch {
             // Fallback: use cost estimation only (ML model may not be loaded)
@@ -110,7 +157,9 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                     })),
                     activities,
                     duration,
-                    maxBudget
+                    maxBudget,
+                    destinationDays: destinationDays || undefined,
+                    destination: bucketList[0] || "Sri Lanka",
                 });
             } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : "AI service is temporarily unavailable");
@@ -123,12 +172,23 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
     const handleApply = () => {
         if (!result) return;
         if (onApply) {
+            // Compute dates: start from tomorrow, end = start + duration
+            const start = new Date();
+            start.setDate(start.getDate() + 1);
+            const end = new Date(start);
+            end.setDate(end.getDate() + result.duration - 1);
+
+            const fmt = (d: Date) => d.toISOString().split("T")[0];
+
             onApply({
-                destination: result.route[0]?.name || "Sri Lanka",
+                destination: result.destination,
                 budget: result.maxBudget ? result.maxBudget.toString() : result.rawBudget.toString(),
                 activities: result.activities,
                 route: result.route,
-                duration: result.duration
+                duration: result.duration,
+                startDate: fmt(start),
+                endDate: fmt(end),
+                destinationDays: result.destinationDays,
             });
             onClose();
         }

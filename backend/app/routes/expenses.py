@@ -58,6 +58,10 @@ def add_expense(trip_id, current_user, membership):
     if not data:
         return jsonify({"error": "Request body is required"}), 400
 
+    trip = Trip.query.get(trip_id)
+    if trip.creator_id != current_user.id:
+        return jsonify({"error": "Only the trip creator can add expenses."}), 403
+
     title = data.get("title", "").strip()
     amount = data.get("amount")
 
@@ -141,6 +145,11 @@ def update_expense(trip_id, current_user, membership, expense_id):
         200: Updated expense
     """
     expense = Expense.query.filter_by(id=expense_id, trip_id=trip_id).first_or_404()
+    
+    trip = Trip.query.get(trip_id)
+    if trip.creator_id != current_user.id:
+        return jsonify({"error": "Only the trip creator can edit expenses."}), 403
+
     data = request.get_json()
 
     if "title" in data:
@@ -176,6 +185,11 @@ def delete_expense(trip_id, current_user, membership, expense_id):
         200: Expense deleted
     """
     expense = Expense.query.filter_by(id=expense_id, trip_id=trip_id).first_or_404()
+    
+    trip = Trip.query.get(trip_id)
+    if trip.creator_id != current_user.id:
+        return jsonify({"error": "Only the trip creator can delete expenses."}), 403
+
     db.session.delete(expense)
     db.session.commit()
 
@@ -385,7 +399,12 @@ def add_settlement(trip_id, current_user, membership):
         return jsonify({"error": "Request body is required"}), 400
 
     to_user_id = data.get("to_user_id")
+    from_user_id = current_user.id
     amount = data.get("amount")
+
+    trip = Trip.query.get(trip_id)
+    if trip.creator_id == current_user.id and data.get("from_user_id"):
+        from_user_id = data.get("from_user_id")
 
     if not to_user_id or amount is None:
         return jsonify({"error": "to_user_id and amount are required"}), 400
@@ -405,7 +424,7 @@ def add_settlement(trip_id, current_user, membership):
 
     settlement = Settlement(
         trip_id=trip_id,
-        from_user_id=current_user.id,
+        from_user_id=from_user_id,
         to_user_id=to_user_id,
         amount=amount,
         note=data.get("note"),

@@ -19,9 +19,14 @@ def register_socket_events(socketio):
         socketio: Flask-SocketIO instance.
     """
 
+    # Global dictionary matching memory states: sid -> user_id
+    # In production, use Redis. For TripMate, memory is sufficient.
+    active_connections = {}
+
     @socketio.on("connect")
     def handle_connect(auth=None):
         """Authenticate the WebSocket connection via JWT."""
+        from flask import request
         # Auth data is passed from the client on connect
         if not auth or "token" not in auth:
             return False  # Reject connection
@@ -36,16 +41,33 @@ def register_socket_events(socketio):
             user = db.session.get(User, payload.get("user_id"))
             if user is None:
                 return False
+            
+            # Map socket id to user_id
+            active_connections[request.sid] = user.id
+
+            from flask_socketio import join_room, emit
+            # Join personal user room to receive friend requests / global updates
+            join_room(f"user_{user.id}")
+
+            # Notify friends that this user is online
+            from app.models import Friendship
+            from sqlalchemy import or_
+            friendships = Friendship.query.filter(
+                (Friendship.status == 'accepted') &
+                or_(Friendship.user_id == user.id, Friendship.friend_id == user.id)
+            ).all()
+
+            for f in friendships:
+                friend_id = f.friend_id if f.user_id == user.id else f.user_id
+                # Send online notification to the friend's personal room
+                emit("friend_presence", {"user_id": user.id, "status": "online"}, to=f"user_{friend_id}")
+
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-            return False
+            return False   
 
     @socketio.on("join_trip")
     def handle_join_trip(data):
-        """Join a trip's WebSocket room for live updates.
-
-        Args:
-            data: Dict with 'trip_id' and 'token' keys.
-        """
+        """Join a trip's WebSocket room for live updates."""
         trip_id = data.get("trip_id")
         token = data.get("token")
 
@@ -83,11 +105,7 @@ def register_socket_events(socketio):
 
     @socketio.on("leave_trip")
     def handle_leave_trip(data):
-        """Leave a trip's WebSocket room.
-
-        Args:
-            data: Dict with 'trip_id' key.
-        """
+        """Leave a trip's WebSocket room."""
         trip_id = data.get("trip_id")
         if trip_id:
             from flask_socketio import leave_room
@@ -96,7 +114,48 @@ def register_socket_events(socketio):
     @socketio.on("disconnect")
     def handle_disconnect():
         """Handle client disconnection."""
-        pass
+        from flask import request
+        user_id = active_connections.pop(request.sid, None)
+        if user_id:
+            # Check if user has other active connections
+            if user_id not in active_connections.values():
+                from flask_socketio import emit
+                from app.models import Friendship
+                from sqlalchemy import or_
+                # Emit offline to friends
+                friendships = Friendship.query.filter(
+                    (Friendship.status == 'accepted') &
+                    or_(Friendship.user_id == user_id, Friendship.friend_id == user_id)
+                ).all()
+
+                for f in friendships:
+                    friend_id = f.friend_id if f.user_id == user_id else f.user_id
+                    emit("friend_presence", {"user_id": user_id, "status": "offline"}, to=f"user_{friend_id}")
+            
+    @socketio.on("get_online_friends")
+    def handle_get_online_friends():
+        """Return a list of currently online friends to the caller."""
+        from flask import request
+        from flask_socketio import emit
+        user_id = active_connections.get(request.sid)
+        if not user_id:
+            return
+            
+        from app.models import Friendship
+        from sqlalchemy import or_
+        friendships = Friendship.query.filter(
+            (Friendship.status == 'accepted') &
+            or_(Friendship.user_id == user_id, Friendship.friend_id == user_id)
+        ).all()
+
+        online_friends = []
+        for f in friendships:
+            friend_id = f.friend_id if f.user_id == user_id else f.user_id
+            if friend_id in active_connections.values():
+                online_friends.append(friend_id)
+                
+        emit("online_friends_list", {"online_user_ids": online_friends})
+
 
 
 def emit_trip_event(socketio, trip_id, event_type, data, skip_sid=None):

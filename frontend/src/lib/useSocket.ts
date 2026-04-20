@@ -28,6 +28,8 @@ interface UseSocketOptions {
     onTripUpdate?: (data: Record<string, unknown>) => void;
     /** Called when a settlement is recorded */
     onSettlementUpdate?: (data: Record<string, unknown>) => void;
+    /** Called when a chat message is received */
+    onChatMessage?: (data: Record<string, unknown>) => void;
 }
 
 interface UseSocketReturn {
@@ -45,6 +47,7 @@ export function useSocket({
     onMemberUpdate,
     onTripUpdate,
     onSettlementUpdate,
+    onChatMessage,
 }: UseSocketOptions): UseSocketReturn {
     const socketRef = useRef<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -58,6 +61,7 @@ export function useSocket({
         onMemberUpdate,
         onTripUpdate,
         onSettlementUpdate,
+        onChatMessage,
     });
 
     useEffect(() => {
@@ -68,6 +72,7 @@ export function useSocket({
             onMemberUpdate,
             onTripUpdate,
             onSettlementUpdate,
+            onChatMessage,
         };
     });
 
@@ -133,6 +138,10 @@ export function useSocket({
 
         socket.on("settlement_recorded", (data: Record<string, unknown>) => {
             callbacksRef.current.onSettlementUpdate?.(data);
+        });
+
+        socket.on("chat_message", (data: Record<string, unknown>) => {
+            callbacksRef.current.onChatMessage?.(data);
         });
 
         return () => {

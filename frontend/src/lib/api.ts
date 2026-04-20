@@ -77,6 +77,16 @@ export class ApiError extends Error {
     }
 }
 
+export interface Friendship {
+    id: string;
+    user_id: string;
+    friend_id: string;
+    status: "pending" | "accepted";
+    created_at: string;
+    user?: User; // Depending on direction
+    friend?: User; // Depending on direction
+}
+
 // ─── Auth API ────────────────────────────────────────────────
 
 export const authApi = {
@@ -102,13 +112,40 @@ export const authApi = {
         }),
 };
 
+// ─── Friends API ─────────────────────────────────────────────
+
+export const friendsApi = {
+    list: () =>
+        apiFetch<{
+            friends: { id: string; user: User; status: "accepted" }[];
+            pending_sent: { id: string; user: User; status: "pending" }[];
+            pending_received: { id: string; user: User; status: "pending" }[];
+        }>("/friends"),
+
+    sendRequest: (email: string) =>
+        apiFetch<{ message: string; friendship: Friendship }>("/friends/request", {
+            method: "POST",
+            body: JSON.stringify({ email }),
+        }),
+
+    acceptRequest: (friendshipId: string) =>
+        apiFetch<{ message: string }>(`/friends/accept/${friendshipId}`, {
+            method: "PUT",
+        }),
+
+    remove: (friendshipId: string) =>
+        apiFetch<{ message: string }>(`/friends/${friendshipId}`, {
+            method: "DELETE",
+        }),
+};
+
 // ─── Trips API ───────────────────────────────────────────────
 
 export const tripsApi = {
     list: () =>
         apiFetch<{ trips: Trip[] }>("/trips"),
 
-    create: (body: Partial<Trip>) =>
+    create: (body: Partial<Trip> & { invited_friends?: string[] }) =>
         apiFetch<{ trip: Trip; message: string }>("/trips", {
             method: "POST",
             body: JSON.stringify(body),
@@ -215,7 +252,7 @@ export const expensesApi = {
         apiFetch<{ settlements: Settlement[] }>(`/trips/${tripId}/settlements`),
 
     /** Record a settlement payment */
-    addSettlement: (tripId: string, body: { to_user_id: string; amount: number; note?: string }) =>
+    addSettlement: (tripId: string, body: { to_user_id: string; amount: number; note?: string; from_user_id?: string }) =>
         apiFetch<{ settlement: Settlement; message: string }>(`/trips/${tripId}/settlements`, {
             method: "POST",
             body: JSON.stringify(body),
@@ -245,7 +282,13 @@ export const votesApi = {
 // ─── Recommendations API ─────────────────────────────────────
 
 export const recommendApi = {
-    getRecommendations: (body: { activities: string[]; bucket_list: string[]; max_budget?: number; duration?: number }) =>
+    getRecommendations: (body: {
+        activities: string[];
+        bucket_list: string[];
+        max_budget?: number;
+        duration?: number;
+        destination_days?: Record<string, number>;
+    }) =>
         apiFetch<RecommendationResult>("/recommend", {
             method: "POST",
             body: JSON.stringify(body),
@@ -299,6 +342,23 @@ export const destinationsApi = {
         apiFetch<{ destinations: DestinationResult[]; count: number }>(
             `/destinations?search=${encodeURIComponent(query)}`
         ),
+};
+
+// ─── Chat API ────────────────────────────────────────────────
+
+export const chatApi = {
+    /** Get paginated chat messages for a trip */
+    getMessages: (tripId: string, page = 1) =>
+        apiFetch<{ messages: ChatMessage[]; total: number; page: number; pages: number; has_more: boolean }>(
+            `/trips/${tripId}/chat?page=${page}`
+        ),
+
+    /** Send a chat message */
+    sendMessage: (tripId: string, message: string) =>
+        apiFetch<{ message: ChatMessage }>(`/trips/${tripId}/chat`, {
+            method: "POST",
+            body: JSON.stringify({ message }),
+        }),
 };
 
 // ─── Type Definitions ────────────────────────────────────────
@@ -360,6 +420,7 @@ export interface ActivityItem {
     estimated_cost: number;
     lat?: number;
     lng?: number;
+    image_url?: string;
     order_index: number;
 }
 
@@ -483,10 +544,15 @@ export interface RecommendationResult {
         lng: number;
         address?: string;
         rating?: number;
+        image_url?: string;
+        day?: number;
+        category?: string;
+        title?: string;
     }[];
     route_count: number;
     input_activities: string[];
     input_bucket_list: string[];
+    multi_destination?: boolean;
 }
 
 export interface CostEstimation {
@@ -501,4 +567,14 @@ export interface CostEstimation {
     parameters: Record<string, unknown>;
     model_version?: string;
     note: string;
+}
+
+export interface ChatMessage {
+    id: string;
+    trip_id: string;
+    user_id: string;
+    user_name?: string;
+    user_avatar?: string;
+    message: string;
+    created_at: string;
 }

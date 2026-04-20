@@ -86,6 +86,12 @@ def create_app(config_class=None):
     from app.routes.notifications import notifications_bp
     app.register_blueprint(notifications_bp, url_prefix="/api/notifications")
 
+    from app.routes.chat import chat_bp
+    app.register_blueprint(chat_bp, url_prefix="/api/trips")
+
+    from app.routes.friends import friends_bp
+    app.register_blueprint(friends_bp, url_prefix="/api/friends")
+
     # --- Health Check ---
 
     @app.route("/health")

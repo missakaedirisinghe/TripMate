@@ -41,16 +41,30 @@ def get_weather(destination, current_user):
         }), 503
 
     try:
-        # Append "Sri Lanka" to ensure correct location
-        query = f"{destination}, Sri Lanka"
         url = "https://api.openweathermap.org/data/2.5/forecast"
-        params = {
-            "q": query,
-            "appid": api_key,
-            "units": "metric",
-            "cnt": 40,  # 5 days, 3-hour intervals
-        }
+        
+        dest_obj = Destination.query.filter(Destination.name.ilike(f"%{destination}%")).first()
+        if dest_obj and dest_obj.lat and dest_obj.lng:
+            params = {
+                "lat": dest_obj.lat,
+                "lon": dest_obj.lng,
+                "appid": api_key,
+                "units": "metric",
+                "cnt": 40,
+            }
+        else:
+            params = {
+                "q": f"{destination}, Sri Lanka",
+                "appid": api_key,
+                "units": "metric",
+                "cnt": 40,
+            }
+            
         response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 404:
+            return jsonify({"error": f"Weather data not found for {destination}"}), 404
+            
         response.raise_for_status()
 
         data = response.json()

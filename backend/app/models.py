@@ -256,6 +256,7 @@ class Activity(db.Model):
     estimated_cost = db.Column(db.Numeric(12, 2), nullable=True, default=0)
     lat = db.Column(db.Float, nullable=True)
     lng = db.Column(db.Float, nullable=True)
+    image_url = db.Column(db.String(500), nullable=True)
     order_index = db.Column(db.Integer, nullable=False, default=0)
 
     def to_dict(self):
@@ -270,6 +271,7 @@ class Activity(db.Model):
             "estimated_cost": float(self.estimated_cost) if self.estimated_cost else 0,
             "lat": self.lat,
             "lng": self.lng,
+            "image_url": self.image_url,
             "order_index": self.order_index,
         }
 
@@ -531,3 +533,78 @@ class PendingInvite(db.Model):
 
     def __repr__(self):
         return f"<PendingInvite {self.email} -> trip {self.trip_id}>"
+
+
+class ChatMessage(db.Model):
+    """Real-time chat message within a trip workspace."""
+
+    __tablename__ = "chat_messages"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    trip_id = db.Column(
+        db.String(36), db.ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    message = db.Column(db.Text, nullable=False)
+    created_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationships
+    trip = db.relationship("Trip", backref=db.backref("chat_messages", lazy="dynamic"))
+    user = db.relationship("User", backref=db.backref("chat_messages", lazy="dynamic"))
+
+    def to_dict(self):
+        """Serialize chat message to dictionary."""
+        return {
+            "id": self.id,
+            "trip_id": self.trip_id,
+            "user_id": self.user_id,
+            "user_name": self.user.name if self.user else None,
+            "user_avatar": self.user.avatar_url if self.user else None,
+            "message": self.message,
+            "created_at": self.created_at.isoformat(),
+        }
+
+    def __repr__(self):
+        return f"<ChatMessage {self.id} in trip {self.trip_id}>"
+
+
+class Friendship(db.Model):
+    """Represents a friendship or pending friend request between two users."""
+
+    __tablename__ = "friendships"
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    user_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    friend_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status = db.Column(db.String(20), nullable=False, default="pending")  # pending, accepted
+    created_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationships
+    user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("sent_friendships", lazy="dynamic", cascade="all, delete"))
+    friend = db.relationship("User", foreign_keys=[friend_id], backref=db.backref("received_friendships", lazy="dynamic", cascade="all, delete"))
+
+    def to_dict(self):
+        """Serialize friendship to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "friend_id": self.friend_id,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            # Include friend details if eagerly loaded
+            "user": {"name": self.user.name, "email": self.user.email} if self.user else None,
+            "friend": {"name": self.friend.name, "email": self.friend.email} if self.friend else None
+        }
+
+    def __repr__(self):
+        return f"<Friendship {self.user_id} -> {self.friend_id} ({self.status})>"

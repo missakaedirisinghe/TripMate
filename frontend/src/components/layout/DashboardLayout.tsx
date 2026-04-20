@@ -9,10 +9,12 @@ import Link from "next/link";
 import { Input } from "@/components/ui/Input";
 import { NotificationBell } from "@/components/ui/NotificationBell";
 import { useAuth } from "@/lib/auth-context";
+import { FriendsSidebar } from "@/components/ui/FriendsSidebar";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(true);
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [isFriendsOpen, setFriendsOpen] = useState(false);
     const { user, logout } = useAuth();
 
     /** Derive initials from the real user name, fallback to "U" */
@@ -102,6 +104,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => setFriendsOpen(true)}
+                            className="hidden sm:flex items-center justify-center p-2 hover:bg-surface rounded-full transition-colors relative"
+                            title="Friends"
+                        >
+                            <User className="w-5 h-5 text-foreground/80" />
+                        </button>
                         <div className="hidden sm:block">
                             <NotificationBell />
                         </div>
@@ -194,6 +203,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     {children}
                 </main>
             </div>
+            
+            <FriendsSidebar isOpen={isFriendsOpen} onClose={() => setFriendsOpen(false)} />
         </div>
     );
 }

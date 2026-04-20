@@ -9,17 +9,18 @@ import { WeatherPanel } from "@/components/workspace/WeatherPanel";
 import { VideoPanel } from "@/components/workspace/VideoPanel";
 import { VotingPanel } from "@/components/workspace/VotingPanel";
 import { SettlementPanel } from "@/components/workspace/SettlementPanel";
+import { ChatPanel } from "@/components/workspace/ChatPanel";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     MapPin, Calendar, Wallet, Users, Plus, Share2, Sparkles, Trash2,
-    Map, CloudSun, PlayCircle, Vote, Handshake, Wifi, WifiOff
+    Map, CloudSun, PlayCircle, Vote, Handshake, Wifi, WifiOff, MessageSquare, ArrowLeft, X
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useSocket } from "@/lib/useSocket";
 import {
     tripsApi, itineraryApi, expensesApi,
-    type Trip, type ItineraryDay, type Expense, type TripMember
+    type Trip, type ItineraryDay, type Expense, type TripMember, type ChatMessage
 } from "@/lib/api";
 import "leaflet/dist/leaflet.css";
 
@@ -44,18 +45,20 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
     // Invite state
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteMsg, setInviteMsg] = useState("");
+    const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
 
     // Activity form state
     const [addingToDay, setAddingToDay] = useState<string | null>(null);
     const [newActivityTitle, setNewActivityTitle] = useState("");
 
     const [mapMarkers, setMapMarkers] = useState<MapMarker[]>([]);
+    const [latestChatMsg, setLatestChatMsg] = useState<ChatMessage | null>(null);
+    const [bannerImg, setBannerImg] = useState("/assets/images/workspace_banner.png");
 
     const tabs = [
         { id: "itinerary", label: "Itinerary", icon: Calendar },
-        { id: "map", label: "Map", icon: Map },
-        { id: "expenses", label: "Expenses", icon: Wallet },
-        { id: "settle", label: "Settle Up", icon: Handshake },
+        { id: "chat", label: "Chat", icon: MessageSquare },
+        { id: "budget", label: "Budget", icon: Wallet },
         { id: "weather", label: "Weather", icon: CloudSun },
         { id: "videos", label: "Videos", icon: PlayCircle },
         { id: "votes", label: "Votes", icon: Vote },
@@ -79,24 +82,36 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                 setExpenses(expRes.expenses);
                 setMembers(memRes.members);
 
-                // Build map markers from activities
+                // Build map markers from activities with day numbers
                 const markers: MapMarker[] = [];
                 for (const day of daysRes.days) {
                     for (const act of day.activities) {
                         if (act.lat && act.lng) {
-                            markers.push({ name: act.title, lat: act.lat, lng: act.lng, type: "activity", description: act.category || undefined });
+                            markers.push({
+                                name: act.title,
+                                lat: act.lat,
+                                lng: act.lng,
+                                type: "activity",
+                                description: act.category || undefined,
+                                image_url: act.image_url || undefined,
+                                dayNumber: day.day_number,
+                            });
                         }
                     }
                 }
                 // Also fetch destinations for general markers
                 try {
-                    const destRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/destinations?search=${encodeURIComponent(tripRes.trip.destination)}`);
+                    const firstCity = tripRes.trip.destination.split(',')[0].trim();
+                    const destRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/destinations?search=${encodeURIComponent(firstCity)}`);
                     const destData = await destRes.json();
                     if (destData.destinations) {
                         for (const d of destData.destinations.slice(0, 20)) {
                             if (!markers.some(m => m.name === d.name)) {
                                 markers.push({ name: d.name, lat: d.lat, lng: d.lng, type: "destination", description: d.address || undefined });
                             }
+                        }
+                        if (destData.destinations.length > 0 && destData.destinations[0].image_url) {
+                            setBannerImg(destData.destinations[0].image_url);
                         }
                     }
                 } catch { /* Destinations are optional */ }
@@ -148,6 +163,10 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
         onMemberUpdate: refreshMembers,
         onTripUpdate: refreshTrip,
         onSettlementUpdate: refreshExpenses,
+        onChatMessage: (data) => {
+            const msg = (data as { message?: ChatMessage }).message;
+            if (msg) setLatestChatMsg(msg);
+        },
     });
 
     const handleAddDay = async () => {
@@ -195,6 +214,16 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
         }
     };
 
+    const handleRemoveMember = async (targetUserId: string) => {
+        try {
+            await tripsApi.removeMember(tripId, targetUserId);
+            const memRes = await tripsApi.listMembers(tripId);
+            setMembers(memRes.members);
+        } catch (err: unknown) {
+            setInviteMsg(err instanceof Error ? err.message : "Failed to remove member");
+        }
+    };
+
     /** Transition trip status: planning → active → completed */
     const handleStatusChange = async (newStatus: string) => {
         try {
@@ -227,10 +256,20 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
 
                 {/* Header Banner */}
                 <div
-                    className="h-48 shrink-0 relative flex flex-col justify-end p-6"
-                    style={{ backgroundImage: "url('/assets/images/workspace_banner.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    className="h-48 shrink-0 relative flex flex-col justify-end p-6 bg-surface transition-all duration-700"
+                    style={{ backgroundImage: `url('${bannerImg}')`, backgroundSize: 'cover', backgroundPosition: 'center' }}
                 >
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                    
+                    {/* Back Button */}
+                    <button
+                        onClick={() => router.push('/dashboard')}
+                        className="absolute top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium transition-colors"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        Dashboard
+                    </button>
+
                     <div className="relative z-10 flex justify-between items-end">
                         <div>
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/20 backdrop-blur-md text-white mb-2">
@@ -253,14 +292,18 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                 <option value="active">🚀 Active</option>
                                 <option value="completed">✅ Completed</option>
                             </select>
-                            <div className="flex -space-x-3">
+                            <div 
+                                onClick={() => setIsMembersModalOpen(true)}
+                                className="flex -space-x-3 cursor-pointer hover:scale-105 transition-transform"
+                                title="Manage Members"
+                            >
                                 {members.slice(0, 3).map((m, i) => (
-                                    <div key={m.id} className="w-8 h-8 rounded-full border-2 border-surface bg-primary/20 flex justify-center items-center text-xs font-bold text-white shadow-sm">
+                                    <div key={m.id} className="w-8 h-8 rounded-full border-2 border-surface bg-primary/20 flex justify-center items-center text-xs font-bold text-white shadow-sm ring-1 ring-black/10">
                                         {m.user_name?.charAt(0) || "U"}
                                     </div>
                                 ))}
                                 {members.length > 3 && (
-                                    <div className="w-8 h-8 rounded-full border-2 border-surface bg-surface flex justify-center items-center text-xs text-foreground">
+                                    <div className="w-8 h-8 rounded-full border-2 border-surface bg-surface flex justify-center items-center text-xs text-foreground ring-1 ring-black/10">
                                         +{members.length - 3}
                                     </div>
                                 )}
@@ -338,8 +381,18 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                             </div>
                                             <div className="pl-4 ml-4 border-l-2 border-border/50 space-y-4 py-2">
                                                 {day.activities.map((act) => (
-                                                    <Card key={act.id} variant="interactive" className="p-4 bg-surface/50 hover:bg-surface/80 border-border/50 flex gap-4">
-                                                        <div className="flex-1">
+                                                    <Card key={act.id} variant="interactive" className="p-0 bg-surface/50 hover:bg-surface/80 border-border/50 overflow-hidden flex gap-0">
+                                                        {/* Activity image thumbnail */}
+                                                        {act.image_url && (
+                                                            <div className="w-20 h-full shrink-0">
+                                                                <img
+                                                                    src={act.image_url}
+                                                                    alt={act.title}
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                        <div className="flex-1 p-4">
                                                             <div className="flex justify-between items-start mb-1">
                                                                 <h4 className="font-bold">{act.title}</h4>
                                                                 <div className="flex items-center gap-2">
@@ -431,47 +484,23 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                 </div>
                             )}
 
-                            {/* EXPENSES TAB */}
-                            {activeTab === "expenses" && (
-                                <div className="space-y-6">
-                                    <Card className="p-4">
-                                        <form onSubmit={handleAddExpense} className="flex gap-2 items-end">
-                                            <div className="flex-1 space-y-1">
-                                                <label className="text-xs text-foreground/60">Title</label>
-                                                <Input placeholder="e.g. Train tickets" className="h-9" value={expenseTitle} onChange={e => setExpenseTitle(e.target.value)} />
-                                            </div>
-                                            <div className="w-28 space-y-1">
-                                                <label className="text-xs text-foreground/60">Amount</label>
-                                                <Input type="number" placeholder="5000" className="h-9" value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)} />
-                                            </div>
-                                            <Button size="sm" className="h-9">Add</Button>
-                                        </form>
-                                    </Card>
-
-                                    <div className="text-sm font-medium text-foreground/60 flex justify-between">
-                                        <span>{expenses.length} expenses</span>
-                                        <span className="text-foreground font-bold">Total: LKR {totalSpent.toLocaleString()}</span>
-                                    </div>
-
-                                    <div className="space-y-3">
-                                        {expenses.map((exp) => (
-                                            <Card key={exp.id} className="p-4 flex justify-between items-center">
-                                                <div>
-                                                    <p className="font-bold">{exp.title}</p>
-                                                    <p className="text-xs text-foreground/50">
-                                                        Paid by {exp.payer_name || "Unknown"} · {exp.split_type} split
-                                                    </p>
-                                                </div>
-                                                <p className="text-lg font-bold">LKR {exp.amount.toLocaleString()}</p>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* SETTLE UP TAB */}
-                            {activeTab === "settle" && user && (
-                                <SettlementPanel tripId={tripId} currentUserId={user.id} />
+                            {/* BUDGET TAB */}
+                            {activeTab === "budget" && user && (
+                                <SettlementPanel 
+                                    tripId={tripId} 
+                                    currentUserId={user.id} 
+                                    isCreator={trip.creator_id === user.id} 
+                                    trip={trip} 
+                                    members={members} 
+                                    expenses={expenses}
+                                    expenseTitle={expenseTitle}
+                                    setExpenseTitle={setExpenseTitle}
+                                    expenseAmount={expenseAmount}
+                                    setExpenseAmount={setExpenseAmount}
+                                    expenseCategory={expenseCategory}
+                                    setExpenseCategory={setExpenseCategory}
+                                    handleAddExpense={handleAddExpense}
+                                />
                             )}
 
                             {/* MEMBERS TAB */}
@@ -511,14 +540,16 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                                 </div>
                             )}
 
-                            {/* MAP TAB */}
-                            {activeTab === "map" && (
-                                <TripMap markers={mapMarkers} destination={trip.destination} />
+                            {/* CHAT TAB */}
+                            {activeTab === "chat" && (
+                                <div className="h-[600px] rounded-2xl overflow-hidden border border-border">
+                                    <ChatPanel tripId={tripId} newMessage={latestChatMsg} />
+                                </div>
                             )}
 
                             {/* WEATHER TAB */}
                             {activeTab === "weather" && (
-                                <WeatherPanel destination={trip.destination} />
+                                <WeatherPanel destination={trip.destination} days={days} />
                             )}
 
                             {/* VIDEOS TAB */}
@@ -535,22 +566,75 @@ export default function TripWorkspacePage({ params }: { params: Promise<{ id: st
                 </div>
             </div>
 
-            {/* Right Area: Live Map */}
-            <div className="hidden md:flex flex-1 flex-col bg-surface overflow-hidden">
-                <div className="p-4 border-b border-border bg-background/80 backdrop-blur-xl">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold flex items-center gap-2">
-                            <Map className="w-4 h-4 text-primary" /> Trip Map
-                        </h3>
-                        <Card className="px-3 py-1 flex items-center gap-2 text-xs bg-background/80 border-white/10">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live
-                        </Card>
-                    </div>
-                </div>
-                <div className="flex-1">
-                    <TripMap markers={mapMarkers} destination={trip.destination} className="h-full rounded-none border-none" />
-                </div>
+            <div className="hidden md:flex flex-1 flex-col bg-surface overflow-hidden relative">
+                <TripMap markers={mapMarkers} destination={trip.destination} className="absolute inset-0 w-full h-full rounded-none border-0" />
             </div>
+
+            {/* Members Management Modal */}
+            <AnimatePresence>
+                {isMembersModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsMembersModalOpen(false)}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        <motion.div 
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="relative w-full max-w-md bg-surface border border-border shadow-2xl rounded-2xl p-6 z-10"
+                        >
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-bold flex items-center gap-2">
+                                    <Users className="text-secondary" /> Manage Members
+                                </h3>
+                                <button onClick={() => setIsMembersModalOpen(false)} className="p-2 hover:bg-background/80 rounded-full transition-colors text-foreground/50">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                                {members.map(m => {
+                                    const isMe = m.user_id === user?.id;
+                                    const IAmCreator = trip.creator_id === user?.id;
+                                    const isCreator = m.user_id === trip.creator_id;
+                                    
+                                    return (
+                                        <div key={m.id} className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border/40">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary ring-2 ring-background">
+                                                    {m.user_name?.charAt(0) || "?"}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-bold flex items-center gap-2">
+                                                        {m.user_name}
+                                                        {isMe && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">You</span>}
+                                                        {isCreator && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary/20 text-secondary">Creator</span>}
+                                                    </span>
+                                                    <span className="text-xs text-foreground/50">{m.user_email}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            {IAmCreator && !isCreator && (
+                                                <button 
+                                                    onClick={() => handleRemoveMember(m.user_id)}
+                                                    className="w-8 h-8 rounded-lg text-foreground/40 hover:text-red-400 hover:bg-red-400/10 flex items-center justify-center transition-all"
+                                                    title="Remove from Trip"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

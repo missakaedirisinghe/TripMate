@@ -178,6 +178,7 @@ def add_activity(trip_id, current_user, membership, day_id):
         estimated_cost=data.get("estimated_cost", 0),
         lat=data.get("lat"),
         lng=data.get("lng"),
+        image_url=data.get("image_url"),
         order_index=data.get("order_index", next_order),
     )
     db.session.add(activity)
@@ -236,6 +237,8 @@ def update_activity(trip_id, current_user, membership, day_id, activity_id):
         activity.lat = data["lat"]
     if "lng" in data:
         activity.lng = data["lng"]
+    if "image_url" in data:
+        activity.image_url = data["image_url"]
     if "order_index" in data:
         activity.order_index = data["order_index"]
 
