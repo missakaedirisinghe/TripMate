@@ -8,13 +8,15 @@ Automatically processes pending trip invitations on registration.
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import re
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import db
+from app import db, mail
 from app.middleware import token_required
 from app.models import PendingInvite, TripMember, User
 from app.notifications import create_notification
+from app.email_service import send_welcome_email
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -45,21 +47,29 @@ def register():
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
-    # Validation
     if not name or not email or not password:
         return jsonify({"error": "Name, email, and password are required"}), 400
 
-    if len(password) < 6:
-        return jsonify({"error": "Password must be at least 6 characters"}), 400
+    pw_errors = []
+    if len(password) < 12:
+        pw_errors.append("at least 12 characters")
+    if not re.search(r"[A-Z]", password):
+        pw_errors.append("an uppercase letter")
+    if not re.search(r"[a-z]", password):
+        pw_errors.append("a lowercase letter")
+    if not re.search(r"[0-9]", password):
+        pw_errors.append("a number")
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?~`]", password):
+        pw_errors.append("a special character (!@#$%^&*)")
+    if pw_errors:
+        return jsonify({"error": f"Password must contain {', '.join(pw_errors)}"}), 400
 
     if "@" not in email or "." not in email:
         return jsonify({"error": "Invalid email format"}), 400
 
-    # Check duplicate
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "An account with this email already exists"}), 409
 
-    # Create user
     user = User(
         name=name,
         email=email,
@@ -68,7 +78,6 @@ def register():
     db.session.add(user)
     db.session.flush()  # Get user.id before commit
 
-    # Process pending invitations for this email
     pending_invites = PendingInvite.query.filter_by(
         email=email, accepted=False
     ).all()
@@ -80,7 +89,6 @@ def register():
         if invite.expires_at < now:
             continue  # Skip expired invites
 
-        # Check if not already a member (edge case)
         existing = TripMember.query.filter_by(
             trip_id=invite.trip_id, user_id=user.id
         ).first()
@@ -88,7 +96,6 @@ def register():
             invite.accepted = True
             continue
 
-        # Add user to the trip
         member = TripMember(
             trip_id=invite.trip_id,
             user_id=user.id,
@@ -96,10 +103,8 @@ def register():
         )
         db.session.add(member)
 
-        # Mark invite as accepted
         invite.accepted = True
 
-        # Create notification
         trip_title = invite.trip.title if invite.trip else "a trip"
         inviter_name = invite.inviter.name if invite.inviter else "Someone"
         create_notification(
@@ -114,7 +119,8 @@ def register():
 
     db.session.commit()
 
-    # Generate token
+    send_welcome_email(mail=mail, to_email=email, user_name=name)
+
     token = _generate_token(user)
 
     response_data = {

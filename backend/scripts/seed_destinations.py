@@ -9,7 +9,6 @@ import sys
 import os
 import ast
 
-# Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import dill
@@ -18,7 +17,6 @@ from app import create_app, db
 from app.models import Destination
 
 
-# Unsplash fallback images for Sri Lankan categories
 CATEGORY_IMAGES = {
     "beach": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop",
     "nature": "https://images.unsplash.com/photo-1620619767323-b95a89183081?w=800&auto=format&fit=crop",
@@ -87,7 +85,6 @@ def seed():
                 skipped += 1
                 continue
 
-            # Parse extracted_activities from string if needed
             activities_raw = row.get("extracted_activities", [])
             if isinstance(activities_raw, str):
                 try:
@@ -100,7 +97,6 @@ def seed():
             category = guess_category(activities_raw)
             image_url = CATEGORY_IMAGES.get(category, CATEGORY_IMAGES["default"])
 
-            # Build description from activities
             desc_parts = []
             if activities_raw:
                 desc_parts.append("Activities: " + ", ".join(activities_raw[:8]))

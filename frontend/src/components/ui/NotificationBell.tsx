@@ -57,7 +57,6 @@ export function NotificationBell() {
             const res = await notificationsApi.unreadCount();
             setUnreadCount(res.unread_count);
         } catch {
-            // Silently fail - user may not be authenticated
         }
     }, []);
 
@@ -74,7 +73,6 @@ export function NotificationBell() {
             const res = await notificationsApi.list(1, 20);
             setNotifications(res.notifications);
         } catch {
-            // Silently fail
         } finally {
             setLoading(false);
         }
@@ -105,7 +103,6 @@ export function NotificationBell() {
             );
             setUnreadCount((c) => Math.max(0, c - 1));
         } catch {
-            // Silently fail
         }
     };
 
@@ -115,7 +112,6 @@ export function NotificationBell() {
             setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
             setUnreadCount(0);
         } catch {
-            // Silently fail
         }
     };
 

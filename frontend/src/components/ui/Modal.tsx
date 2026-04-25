@@ -17,7 +17,6 @@ export const Modal: React.FC<ModalProps> = ({
     title,
     children,
 }) => {
-    // Prevent body scroll when modal is open
     React.useEffect(() => {
         if (isOpen) {
             document.body.style.overflow = "hidden";

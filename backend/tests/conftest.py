@@ -46,14 +46,12 @@ def auth_headers(client):
         if email is None:
             email = f"test{counter['n']}@example.com"
 
-        # Register
         client.post("/api/auth/register", json={
             "name": name,
             "email": email,
             "password": password,
         })
 
-        # Login
         res = client.post("/api/auth/login", json={
             "email": email,
             "password": password,

@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "E:\TripMate\backend\run.py", line 3, in <module>
-    app = create_app()
-          ^^^^^^^^^^^^
-  File "E:\TripMate\backend\app\__init__.py", line 44, in create_app
-    from app.routes.recommendations import load_model
-ImportError: cannot import name 'load_model' from 'app.routes.recommendations' (E:\TripMate\backend\app\routes\recommendations.py)

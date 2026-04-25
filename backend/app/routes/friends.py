@@ -7,9 +7,10 @@ CRUD operations for tracking friends, sending requests, and accepting requests.
 from flask import Blueprint, jsonify, request
 from sqlalchemy import or_, and_
 
-from app import db, socketio
+from app import db, mail, socketio
 from app.middleware import token_required
 from app.models import Friendship, User
+from app.email_service import send_friend_request_email
 
 friends_bp = Blueprint("friends", __name__)
 
@@ -33,16 +34,13 @@ def get_friendships(current_user):
     for f in friendships:
         data = f.to_dict()
         
-        # Add basic info on the other person for UI convenience
         if f.user_id == current_user.id:
-            # I sent it
             other_user = f.friend
             if f.status == "accepted":
                 friends_list.append({"id": f.id, "user": {"id": other_user.id, "name": other_user.name, "email": other_user.email}, "status": "accepted"})
             else:
                 pending_sent.append({"id": f.id, "user": {"id": other_user.id, "name": other_user.name, "email": other_user.email}, "status": "pending"})
         else:
-            # I received it
             other_user = f.user
             if f.status == "accepted":
                 friends_list.append({"id": f.id, "user": {"id": other_user.id, "name": other_user.name, "email": other_user.email}, "status": "accepted"})
@@ -77,7 +75,6 @@ def send_request(current_user):
     if not target:
         return jsonify({"error": "User with this email not found"}), 404
 
-    # Check if a friendship already exists
     existing = Friendship.query.filter(
         or_(
             and_(Friendship.user_id == current_user.id, Friendship.friend_id == target.id),
@@ -91,6 +88,19 @@ def send_request(current_user):
     f = Friendship(user_id=current_user.id, friend_id=target.id, status="pending")
     db.session.add(f)
     db.session.commit()
+
+    socketio.emit(
+        "social_update",
+        {"action": "friend_request", "user_id": current_user.id, "user_name": current_user.name},
+        to=f"user_{target.id}",
+    )
+
+    send_friend_request_email(
+        mail=mail,
+        to_email=target.email,
+        to_name=target.name,
+        from_name=current_user.name,
+    )
 
     return jsonify({"message": "Friend request sent!", "friendship": f.to_dict()}), 201
 
@@ -107,7 +117,6 @@ def accept_request(current_user, friendship_id):
     f.status = "accepted"
     db.session.commit()
 
-    # Emit socket event to notify the sender
     socketio.emit(
         "social_update",
         {"action": "friend_accepted", "user_id": current_user.id, "user_name": current_user.name},

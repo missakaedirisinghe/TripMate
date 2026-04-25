@@ -27,7 +27,6 @@ def get_messages(current_user, trip_id):
         200: Paginated message history (newest first)
         403: Not a trip member
     """
-    # Verify membership
     membership = TripMember.query.filter_by(
         trip_id=trip_id, user_id=current_user.id
     ).first()
@@ -43,7 +42,6 @@ def get_messages(current_user, trip_id):
         .paginate(page=page, per_page=per_page, error_out=False)
     )
 
-    # Reverse so oldest messages come first within the page
     messages = [m.to_dict() for m in reversed(pagination.items)]
 
     return jsonify({
@@ -68,7 +66,6 @@ def send_message(current_user, trip_id):
         400: Missing message content
         403: Not a trip member
     """
-    # Verify membership
     membership = TripMember.query.filter_by(
         trip_id=trip_id, user_id=current_user.id
     ).first()
@@ -89,7 +86,6 @@ def send_message(current_user, trip_id):
 
     msg_dict = msg.to_dict()
 
-    # Broadcast to all users in the trip room via Socket.IO
     socketio.emit(
         "chat_message",
         {"message": msg_dict, "trip_id": trip_id},

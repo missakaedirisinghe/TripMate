@@ -81,7 +81,6 @@ export function TripMap({ markers = [], destination, className = "" }: TripMapPr
     useEffect(() => {
         setMounted(true);
 
-        // Fix Leaflet default marker icons in Next.js
         if (typeof window !== "undefined") {
             const L = require("leaflet");
             delete (L.Icon.Default.prototype as Record<string, unknown>)._getIconUrl;
@@ -108,11 +107,9 @@ export function TripMap({ markers = [], destination, className = "" }: TripMapPr
     const polylines = useMemo(() => {
         const lines: { positions: [number, number][]; color: string; day: number }[] = [];
 
-        // Build polyline from activity markers in order
         const activityMarkers = markers.filter(m => m.type === "activity" && m.dayNumber);
         const days = [...new Set(activityMarkers.map(m => m.dayNumber!))].sort((a, b) => a - b);
 
-        // Create continuous segments strictly in chronological activity order
         for (let i = 0; i < activityMarkers.length - 1; i++) {
             const current = activityMarkers[i];
             const next = activityMarkers[i + 1];
@@ -158,7 +155,6 @@ export function TripMap({ markers = [], destination, className = "" }: TripMapPr
         );
     }
 
-    // Determine center from markers or default
     const center: [number, number] =
         markers.length > 0
             ? [markers[0].lat, markers[0].lng]

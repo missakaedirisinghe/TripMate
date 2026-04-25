@@ -53,7 +53,6 @@ export function useSocket({
     const [isConnected, setIsConnected] = useState(false);
     const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
-    // Store callbacks in refs to avoid re-creating the socket on callback changes
     const callbacksRef = useRef({
         onItineraryUpdate,
         onExpenseUpdate,
@@ -93,7 +92,6 @@ export function useSocket({
 
         socket.on("connect", () => {
             setIsConnected(true);
-            // Join the trip room
             socket.emit("join_trip", { trip_id: tripId, token });
         });
 
@@ -105,13 +103,11 @@ export function useSocket({
             setIsConnected(false);
         });
 
-        // User presence events
         socket.on("user_joined", (data: { user_id: string; user_name: string }) => {
             setOnlineUsers((prev) => [...new Set([...prev, data.user_name])]);
             callbacksRef.current.onMemberUpdate?.(data);
         });
 
-        // Real-time data events
         socket.on("itinerary_updated", (data: Record<string, unknown>) => {
             callbacksRef.current.onItineraryUpdate?.(data);
         });

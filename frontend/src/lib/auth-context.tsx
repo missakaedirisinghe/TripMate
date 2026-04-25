@@ -31,7 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    // Check for existing session on mount
     useEffect(() => {
         const token = localStorage.getItem("tripmate_token");
         if (token) {

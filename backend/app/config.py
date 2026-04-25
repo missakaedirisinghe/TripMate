@@ -15,7 +15,6 @@ load_dotenv()
 class Config:
     """Base configuration for all environments."""
 
-    # Core
     SECRET_KEY = os.environ.get("SECRET_KEY") or "dev-fallback-secret-key-for-tripmate"
     SQLALCHEMY_DATABASE_URI = (
         os.environ.get("DATABASE_URL")
@@ -23,11 +22,9 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # JWT
     JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", 24))
     JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
-    # ML Model
     MODEL_PATH = (
         os.environ.get("MODEL_PATH")
         or "../Prediction Model/Recommendation Model.pkl"
@@ -37,11 +34,9 @@ class Config:
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "cost_model.pkl"),
     )
 
-    # External APIs
     OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY", "")
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 
-    # Flask-Mail (Email Invitations)
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
     MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
@@ -53,7 +48,6 @@ class Config:
         os.environ.get("MAIL_USERNAME", "noreply@tripmate.app"),
     )
 
-    # Frontend URL (for invite links)
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 

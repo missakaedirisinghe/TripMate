@@ -87,7 +87,6 @@ export interface Friendship {
     friend?: User; // Depending on direction
 }
 
-// ─── Auth API ────────────────────────────────────────────────
 
 export const authApi = {
     register: (body: { name: string; email: string; password: string }) =>
@@ -112,7 +111,6 @@ export const authApi = {
         }),
 };
 
-// ─── Friends API ─────────────────────────────────────────────
 
 export const friendsApi = {
     list: () =>
@@ -139,7 +137,6 @@ export const friendsApi = {
         }),
 };
 
-// ─── Trips API ───────────────────────────────────────────────
 
 export const tripsApi = {
     list: () =>
@@ -181,7 +178,6 @@ export const tripsApi = {
         }),
 };
 
-// ─── Itinerary API ───────────────────────────────────────────
 
 export const itineraryApi = {
     listDays: (tripId: string) =>
@@ -217,7 +213,6 @@ export const itineraryApi = {
         ),
 };
 
-// ─── Expenses API ────────────────────────────────────────────
 
 export const expensesApi = {
     list: (tripId: string) =>
@@ -259,7 +254,6 @@ export const expensesApi = {
         }),
 };
 
-// ─── Votes API ───────────────────────────────────────────────
 
 export const votesApi = {
     cast: (tripId: string, body: { vote_type: string; target_id: string; target_value?: string }) =>
@@ -279,7 +273,6 @@ export const votesApi = {
         }),
 };
 
-// ─── Recommendations API ─────────────────────────────────────
 
 export const recommendApi = {
     getRecommendations: (body: {
@@ -307,7 +300,6 @@ export const recommendApi = {
         }),
 };
 
-// ─── Notifications API ───────────────────────────────────────
 
 export const notificationsApi = {
     /** List notifications with pagination */
@@ -334,7 +326,6 @@ export const notificationsApi = {
         }),
 };
 
-// ─── Destinations API (public, no auth) ──────────────────────
 
 export const destinationsApi = {
     /** Search destinations by name */
@@ -344,7 +335,6 @@ export const destinationsApi = {
         ),
 };
 
-// ─── Chat API ────────────────────────────────────────────────
 
 export const chatApi = {
     /** Get paginated chat messages for a trip */
@@ -361,7 +351,6 @@ export const chatApi = {
         }),
 };
 
-// ─── Type Definitions ────────────────────────────────────────
 
 export interface User {
     id: string;
@@ -553,6 +542,11 @@ export interface RecommendationResult {
     input_activities: string[];
     input_bucket_list: string[];
     multi_destination?: boolean;
+    plans?: {
+        label: string;
+        recommended_route: RecommendationResult["recommended_route"];
+        route_count: number;
+    }[];
 }
 
 export interface CostEstimation {

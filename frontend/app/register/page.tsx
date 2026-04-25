@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+import { Check, X } from "lucide-react";
 
 export default function RegisterPage() {
     const [name, setName] = useState("");
@@ -20,9 +21,26 @@ export default function RegisterPage() {
     const { register } = useAuth();
     const router = useRouter();
 
+    /** Password strength criteria checks */
+    const pwChecks = useMemo(() => ({
+        length: password.length >= 12,
+        uppercase: /[A-Z]/.test(password),
+        lowercase: /[a-z]/.test(password),
+        number: /[0-9]/.test(password),
+        special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password),
+    }), [password]);
+
+    const allPassed = Object.values(pwChecks).every(Boolean);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
+
+        if (!allPassed) {
+            setError("Please meet all password requirements before continuing.");
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -88,14 +106,53 @@ export default function RegisterPage() {
                             <Input
                                 id="password"
                                 type="password"
-                                placeholder="••••••••"
+                                placeholder="••••••••••••"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
                             />
                         </div>
 
-                        <Button type="submit" variant="primary" className="w-full mt-6" disabled={loading}>
+                        {/* Password Strength Checklist */}
+                        {password.length > 0 && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                className="p-3 rounded-xl bg-surface/60 border border-border/50 space-y-1.5"
+                            >
+                                <p className="text-[11px] font-semibold uppercase text-foreground/50 mb-1">Password Requirements</p>
+                                {[
+                                    { key: "length", label: "At least 12 characters" },
+                                    { key: "uppercase", label: "An uppercase letter (A-Z)" },
+                                    { key: "lowercase", label: "A lowercase letter (a-z)" },
+                                    { key: "number", label: "A number (0-9)" },
+                                    { key: "special", label: "A special character (!@#$%^&*)" },
+                                ].map(({ key, label }) => {
+                                    const passed = pwChecks[key as keyof typeof pwChecks];
+                                    return (
+                                        <div key={key} className="flex items-center gap-2">
+                                            <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-colors ${
+                                                passed
+                                                    ? 'bg-green-500/20 text-green-400'
+                                                    : 'bg-red-500/10 text-red-400/60'
+                                            }`}>
+                                                {passed
+                                                    ? <Check className="w-3 h-3" />
+                                                    : <X className="w-3 h-3" />
+                                                }
+                                            </div>
+                                            <span className={`text-xs transition-colors ${
+                                                passed ? 'text-green-400' : 'text-foreground/50'
+                                            }`}>
+                                                {label}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </motion.div>
+                        )}
+
+                        <Button type="submit" variant="primary" className="w-full mt-6" disabled={loading || !allPassed}>
                             {loading ? "Creating Account..." : "Create Account"}
                         </Button>
 

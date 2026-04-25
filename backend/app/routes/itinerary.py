@@ -60,7 +60,6 @@ def add_day(trip_id, current_user, membership):
     )
     db.session.add(day)
 
-    # Notify members
     notify_trip_members(
         trip_id=trip_id,
         notification_type="itinerary_change",
@@ -72,7 +71,6 @@ def add_day(trip_id, current_user, membership):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "itinerary_updated",
         {"action": "day_added", "day": day.to_dict(), "user_name": current_user.name},
@@ -103,7 +101,6 @@ def update_day(trip_id, current_user, membership, day_id):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "itinerary_updated",
         {"action": "day_updated", "day": day.to_dict(), "user_name": current_user.name},
@@ -127,7 +124,6 @@ def delete_day(trip_id, current_user, membership, day_id):
     db.session.delete(day)
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "itinerary_updated",
         {"action": "day_deleted", "day_id": day_id, "day_number": day_number, "user_name": current_user.name},
@@ -137,7 +133,6 @@ def delete_day(trip_id, current_user, membership, day_id):
     return jsonify({"message": "Day deleted"}), 200
 
 
-# --- Activities ---
 
 
 @itinerary_bp.route("/<trip_id>/days/<day_id>/activities", methods=["POST"])
@@ -158,14 +153,12 @@ def add_activity(trip_id, current_user, membership, day_id):
     Returns:
         201: Created activity
     """
-    # Verify day belongs to trip
     day = ItineraryDay.query.filter_by(id=day_id, trip_id=trip_id).first_or_404()
 
     data = request.get_json()
     if not data or not data.get("title"):
         return jsonify({"error": "Title is required"}), 400
 
-    # Auto-calculate order
     max_order = db.session.query(db.func.max(Activity.order_index)).filter_by(day_id=day_id).scalar()
     next_order = (max_order or 0) + 1
 
@@ -183,7 +176,6 @@ def add_activity(trip_id, current_user, membership, day_id):
     )
     db.session.add(activity)
 
-    # Notify members
     notify_trip_members(
         trip_id=trip_id,
         notification_type="itinerary_change",
@@ -195,7 +187,6 @@ def add_activity(trip_id, current_user, membership, day_id):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "itinerary_updated",
         {
@@ -244,7 +235,6 @@ def update_activity(trip_id, current_user, membership, day_id, activity_id):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "itinerary_updated",
         {
@@ -274,7 +264,6 @@ def delete_activity(trip_id, current_user, membership, day_id, activity_id):
     db.session.delete(activity)
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "itinerary_updated",
         {

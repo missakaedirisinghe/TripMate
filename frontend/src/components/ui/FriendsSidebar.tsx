@@ -21,13 +21,11 @@ export function FriendsSidebar({ isOpen, onClose }: FriendsSidebarProps) {
     const [inviteEmail, setInviteEmail] = useState("");
     const [loading, setLoading] = useState(false);
     
-    // Quick load
     useEffect(() => {
         if (!isOpen || !user) return;
         fetchFriends();
     }, [isOpen, user]);
     
-    // Connect to sockets to read presence
     useEffect(() => {
         if (!token || !isOpen) return;
         const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8000";

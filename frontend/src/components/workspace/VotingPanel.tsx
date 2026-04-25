@@ -40,7 +40,6 @@ export function VotingPanel({ tripId, currentUserId }: VotingPanelProps) {
             const res = await votesApi.get(tripId);
             setTallies(res.tallies);
         } catch {
-            // Silently fail
         } finally {
             setLoading(false);
         }
@@ -57,7 +56,6 @@ export function VotingPanel({ tripId, currentUserId }: VotingPanelProps) {
             await votesApi.cast(tripId, { vote_type: voteType, target_id: targetId, target_value: targetValue });
             await fetchVotes();
         } catch {
-            // May already be voted
         } finally {
             setSubmitting(false);
         }
@@ -69,7 +67,6 @@ export function VotingPanel({ tripId, currentUserId }: VotingPanelProps) {
             await votesApi.retract(tripId, voteId);
             await fetchVotes();
         } catch {
-            // Silently fail
         }
     };
 
@@ -87,7 +84,6 @@ export function VotingPanel({ tripId, currentUserId }: VotingPanelProps) {
             setNewOption("");
             await fetchVotes();
         } catch {
-            // Silently fail
         } finally {
             setSubmitting(false);
         }

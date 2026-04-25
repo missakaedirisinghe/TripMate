@@ -2,10 +2,17 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Sparkles, MapPin, Wallet, ArrowRight, Activity } from "lucide-react";
+import { X, Sparkles, MapPin, Wallet, ArrowRight, Activity, Compass, Map, Zap } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { recommendApi, type RecommendationResult } from "@/lib/api";
 import { WeatherPanel } from "@/components/workspace/WeatherPanel";
+
+interface PlanVariant {
+    label: string;
+    recommended_route: RecommendationResult["recommended_route"];
+    route_count: number;
+    estimated_cost?: number;
+}
 
 interface AIPlannerPanelProps {
     isOpen: boolean;
@@ -23,14 +30,20 @@ interface AIPlannerPanelProps {
     }) => void;
 }
 
+const PLAN_ICONS = [Compass, Zap, Map];
+const PLAN_COLORS = ["text-cyan-400", "text-amber-400", "text-violet-400"];
+const PLAN_BG = ["bg-cyan-400/10", "bg-amber-400/10", "bg-violet-400/10"];
+const PLAN_RING = ["ring-cyan-400/30", "ring-amber-400/30", "ring-violet-400/30"];
+
 export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPanelProps) {
     const [query, setQuery] = useState("");
     const [isGenerating, setIsGenerating] = useState(false);
+    const [plans, setPlans] = useState<PlanVariant[]>([]);
+    const [selectedPlanIdx, setSelectedPlanIdx] = useState(0);
     const [result, setResult] = useState<null | {
         feasibility: string;
         feasibilityColor: string;
         budgetEstimate: string;
-        route: RecommendationResult["recommended_route"];
         rawBudget: number;
         activities: string[];
         duration: number;
@@ -42,7 +55,6 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
 
     /** Parse multi-destination intent like "3 days in Mirissa and 2 days in Kandy" */
     const parseDestinationDays = (text: string): Record<string, number> | null => {
-        // Lookahead to stop capturing place names when encountering common prepositions, numbers, or end of string
         const regex = /(\d+)\s*(?:days?)\s+(?:in|at)\s+([A-Za-z\s]+?)(?=\s+(?:with|from|to|for|budget|and)\b|,|$|\d)/gi;
         const result: Record<string, number> = {};
         let match;
@@ -60,23 +72,21 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
         if (!query) return;
         setIsGenerating(true);
         setError("");
+        setPlans([]);
+        setSelectedPlanIdx(0);
 
-        // Parse activities from natural language query
         const activityKeywords = ["surfing", "hiking", "diving", "snorkeling", "whale watching",
             "cultural", "temple", "wildlife", "safari", "beach", "waterfall", "camping", "cycling"];
         const activities = activityKeywords.filter(a => query.toLowerCase().includes(a));
-        if (activities.length === 0) activities.push("sightseeing"); // fallback
+        if (activities.length === 0) activities.push("sightseeing");
 
-        // Parse destination hints
         const destKeywords = ["Ella", "Mirissa", "Sigiriya", "Yala", "Arugam Bay", "Kandy", "Galle", "Nuwara Eliya", "Trincomalee"];
         const bucketList = destKeywords.filter(d => query.toLowerCase().includes(d.toLowerCase()));
 
-        // Parse duration (e.g. 3 day, 5-day)
         let duration = 3;
         const dayMatch = query.match(/\b(\d+)\s*-?day/i);
         if (dayMatch) duration = parseInt(dayMatch[1], 10);
 
-        // Parse budget
         let maxBudget: number | undefined;
         const numMatch = query.match(/\b(\d{4,})\b/);
         const kMatch = query.match(/\b(\d+)\s*[kK]\b/);
@@ -86,12 +96,9 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
             maxBudget = parseInt(kMatch[1], 10) * 1000;
         }
 
-        // Parse multi-destination intent
         const destinationDays = parseDestinationDays(query);
         if (destinationDays) {
-            // If multi-destination is detected, compute total duration from it
             duration = Object.values(destinationDays).reduce((sum, d) => sum + d, 0);
-            // Add all specified destinations to bucket list
             for (const dest of Object.keys(destinationDays)) {
                 if (!bucketList.some(b => b.toLowerCase() === dest.toLowerCase())) {
                     bucketList.push(dest);
@@ -100,7 +107,6 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
         }
 
         try {
-            // Try real recommendation API with optional destination_days
             const recResult = await recommendApi.getRecommendations({ 
                 activities, 
                 bucket_list: bucketList,
@@ -109,7 +115,6 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                 destination_days: destinationDays || undefined,
             });
 
-            // Also get cost estimation based on AI suggestions
             const costResult = await recommendApi.estimateCost({
                 destination: bucketList[0] || "Sri Lanka",
                 duration_days: duration,
@@ -122,12 +127,21 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                 ? Object.keys(destinationDays).join(", ")
                 : (recResult.recommended_route[0]?.name || bucketList[0] || "Sri Lanka");
 
+            if (recResult.plans && recResult.plans.length > 0) {
+                setPlans(recResult.plans);
+            } else {
+                setPlans([{
+                    label: "Recommended",
+                    recommended_route: recResult.recommended_route,
+                    route_count: recResult.route_count,
+                }]);
+            }
+
             setResult({
                 feasibility: "High",
                 feasibilityColor: "text-green-500",
                 budgetEstimate: `LKR ${costResult.estimation.total.toLocaleString()}`,
                 rawBudget: costResult.estimation.total,
-                route: recResult.recommended_route,
                 activities,
                 duration,
                 maxBudget,
@@ -135,7 +149,6 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                 destination: combinedDest,
             });
         } catch {
-            // Fallback: use cost estimation only (ML model may not be loaded)
             try {
                 const costResult = await recommendApi.estimateCost({
                     destination: bucketList[0] || "Sri Lanka",
@@ -145,16 +158,21 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                     accommodation_type: "mid-range",
                 });
 
+                setPlans([{
+                    label: "Recommended",
+                    recommended_route: bucketList.map((name, i) => ({
+                        name,
+                        lat: 7.0 + i * 0.5,
+                        lng: 80.0 + i * 0.3,
+                    })),
+                    route_count: bucketList.length,
+                }]);
+
                 setResult({
                     feasibility: "Medium",
                     feasibilityColor: "text-yellow-500",
                     budgetEstimate: `LKR ${costResult.estimation.total.toLocaleString()}`,
                     rawBudget: costResult.estimation.total,
-                    route: bucketList.map((name, i) => ({
-                        name,
-                        lat: 7.0 + i * 0.5,
-                        lng: 80.0 + i * 0.3,
-                    })),
                     activities,
                     duration,
                     maxBudget,
@@ -169,22 +187,22 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
         }
     };
 
+    const selectedPlan = plans[selectedPlanIdx];
+
     const handleApply = () => {
-        if (!result) return;
+        if (!result || !selectedPlan) return;
         if (onApply) {
-            // Compute dates: start from tomorrow, end = start + duration
             const start = new Date();
             start.setDate(start.getDate() + 1);
             const end = new Date(start);
             end.setDate(end.getDate() + result.duration - 1);
-
             const fmt = (d: Date) => d.toISOString().split("T")[0];
 
             onApply({
                 destination: result.destination,
                 budget: result.maxBudget ? result.maxBudget.toString() : result.rawBudget.toString(),
                 activities: result.activities,
-                route: result.route,
+                route: selectedPlan.recommended_route,
                 duration: result.duration,
                 startDate: fmt(start),
                 endDate: fmt(end),
@@ -250,7 +268,7 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                                     className="w-full gap-2 relative overflow-hidden group"
                                 >
                                     <span className="relative z-10 flex items-center gap-2">
-                                        {isGenerating ? "Analyzing Patterns..." : "Generate Itinerary"}
+                                        {isGenerating ? "Analyzing Patterns..." : "Generate 3 Plans"}
                                         {!isGenerating && <ArrowRight className="w-4 h-4" />}
                                     </span>
                                     <div className="absolute inset-0 bg-gradient-to-r from-primary via-secondary to-primary opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -277,7 +295,7 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                             )}
 
                             {/* Results Section */}
-                            {result && !isGenerating && (
+                            {result && !isGenerating && plans.length > 0 && (
                                 <motion.div
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
@@ -295,34 +313,81 @@ export function AIPlannerPanel({ isOpen, onClose, tripId, onApply }: AIPlannerPa
                                             <div className="flex items-center gap-2 mb-2 text-foreground/60">
                                                 <Wallet className="w-4 h-4" /> Est. Cost
                                             </div>
-                                            <p className="text-xl font-bold text-foreground">{result.budgetEstimate}</p>
+                                            <p className="text-xl font-bold text-foreground">
+                                                {selectedPlan?.estimated_cost
+                                                    ? `LKR ${selectedPlan.estimated_cost.toLocaleString()}`
+                                                    : result.budgetEstimate}
+                                            </p>
                                         </div>
                                     </div>
 
-                                    {/* Route */}
-                                    <div>
-                                        <h3 className="text-sm font-bold tracking-wider uppercase text-foreground/50 mb-4 flex items-center gap-2">
-                                            <MapPin className="w-4 h-4" /> Suggested Route
-                                        </h3>
-                                        <div className="space-y-4 relative pl-4 border-l-2 border-border/50 ml-2">
-                                            {result.route.map((place: any, idx: number) => (
-                                                <div key={idx} className="relative">
-                                                    <div className="absolute -left-[25px] top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
-                                                    <h4 className="font-bold text-foreground mb-1">Stop {idx + 1}: {place.name}</h4>
-                                                    {place.rating && <p className="text-sm text-foreground/70">Rating: {place.rating.toFixed(1)}/5</p>}
-                                                </div>
-                                            ))}
+                                    {/* Plan Selector Tabs */}
+                                    {plans.length > 1 && (
+                                        <div className="space-y-2">
+                                            <h3 className="text-xs font-bold tracking-wider uppercase text-foreground/50">Choose a Plan</h3>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {plans.map((plan, idx) => {
+                                                    const Icon = PLAN_ICONS[idx] || Compass;
+                                                    const isActive = idx === selectedPlanIdx;
+                                                    return (
+                                                        <button
+                                                            key={idx}
+                                                            onClick={() => setSelectedPlanIdx(idx)}
+                                                            className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all text-center ${
+                                                                isActive 
+                                                                    ? `${PLAN_BG[idx]} border-transparent ring-2 ${PLAN_RING[idx]}` 
+                                                                    : 'bg-surface/30 border-border/50 hover:bg-surface/50'
+                                                            }`}
+                                                        >
+                                                            <Icon className={`w-5 h-5 ${isActive ? PLAN_COLORS[idx] : 'text-foreground/40'}`} />
+                                                            <span className={`text-[11px] font-semibold leading-tight ${isActive ? PLAN_COLORS[idx] : 'text-foreground/60'}`}>
+                                                                {plan.label}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {/* Route for selected plan */}
+                                    {selectedPlan && (() => {
+                                        const skipCategories = new Set(["food", "accommodation", "transport"]);
+                                        const seenNames = new Set<string>();
+                                        const activityStops = selectedPlan.recommended_route.filter((place: any) => {
+                                            if (skipCategories.has(place.category)) return false;
+                                            const key = (place.name || "").toLowerCase();
+                                            if (seenNames.has(key)) return false;
+                                            seenNames.add(key);
+                                            return true;
+                                        });
+
+                                        return (
+                                            <div>
+                                                <h3 className="text-sm font-bold tracking-wider uppercase text-foreground/50 mb-4 flex items-center gap-2">
+                                                    <MapPin className="w-4 h-4" /> {selectedPlan.label} Route
+                                                </h3>
+                                                <div className="space-y-4 relative pl-4 border-l-2 border-border/50 ml-2">
+                                                    {activityStops.map((place: any, idx: number) => (
+                                                        <div key={idx} className="relative">
+                                                            <div className="absolute -left-[25px] top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
+                                                            <h4 className="font-bold text-foreground mb-1">Stop {idx + 1}: {place.title || place.name}</h4>
+                                                            {place.rating && <p className="text-sm text-foreground/70">Rating: {place.rating.toFixed(1)}/5</p>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* Weather Outlook */}
                                     <div className="pt-2 border-t border-border/50">
-                                        <WeatherPanel destination={result.route[0]?.name || "Sri Lanka"} />
+                                        <WeatherPanel destination={selectedPlan?.recommended_route[0]?.name || "Sri Lanka"} />
                                     </div>
 
                                     {onApply && (
                                         <Button variant="primary" className="w-full" onClick={handleApply}>
-                                            Apply AI Settings to Trip Let's Go!
+                                            Apply "{selectedPlan?.label}" Plan — Let's Go!
                                         </Button>
                                     )}
                                 </motion.div>

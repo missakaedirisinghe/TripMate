@@ -19,15 +19,12 @@ def register_socket_events(socketio):
         socketio: Flask-SocketIO instance.
     """
 
-    # Global dictionary matching memory states: sid -> user_id
-    # In production, use Redis. For TripMate, memory is sufficient.
     active_connections = {}
 
     @socketio.on("connect")
     def handle_connect(auth=None):
         """Authenticate the WebSocket connection via JWT."""
         from flask import request
-        # Auth data is passed from the client on connect
         if not auth or "token" not in auth:
             return False  # Reject connection
 
@@ -42,14 +39,11 @@ def register_socket_events(socketio):
             if user is None:
                 return False
             
-            # Map socket id to user_id
             active_connections[request.sid] = user.id
 
             from flask_socketio import join_room, emit
-            # Join personal user room to receive friend requests / global updates
             join_room(f"user_{user.id}")
 
-            # Notify friends that this user is online
             from app.models import Friendship
             from sqlalchemy import or_
             friendships = Friendship.query.filter(
@@ -59,7 +53,6 @@ def register_socket_events(socketio):
 
             for f in friendships:
                 friend_id = f.friend_id if f.user_id == user.id else f.user_id
-                # Send online notification to the friend's personal room
                 emit("friend_presence", {"user_id": user.id, "status": "online"}, to=f"user_{friend_id}")
 
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
@@ -82,7 +75,6 @@ def register_socket_events(socketio):
             )
             user_id = payload.get("user_id")
 
-            # Verify membership
             membership = TripMember.query.filter_by(
                 trip_id=trip_id, user_id=user_id
             ).first()
@@ -117,12 +109,10 @@ def register_socket_events(socketio):
         from flask import request
         user_id = active_connections.pop(request.sid, None)
         if user_id:
-            # Check if user has other active connections
             if user_id not in active_connections.values():
                 from flask_socketio import emit
                 from app.models import Friendship
                 from sqlalchemy import or_
-                # Emit offline to friends
                 friendships = Friendship.query.filter(
                     (Friendship.status == 'accepted') &
                     or_(Friendship.user_id == user_id, Friendship.friend_id == user_id)

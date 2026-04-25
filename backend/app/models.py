@@ -39,7 +39,6 @@ class User(db.Model):
         nullable=False,
     )
 
-    # Relationships
     created_trips = db.relationship(
         "Trip", backref="creator", lazy="dynamic", foreign_keys="Trip.creator_id"
     )
@@ -102,7 +101,6 @@ class Trip(db.Model):
         nullable=False,
     )
 
-    # Relationships
     members = db.relationship(
         "TripMember", backref="trip", lazy="dynamic", cascade="all, delete-orphan"
     )
@@ -207,7 +205,6 @@ class ItineraryDay(db.Model):
     date = db.Column(db.Date, nullable=True)
     order_index = db.Column(db.Integer, nullable=False, default=0)
 
-    # Relationships
     activities = db.relationship(
         "Activity",
         backref="day",
@@ -426,7 +423,6 @@ class Notification(db.Model):
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    # Relationships
     user = db.relationship("User", backref=db.backref("notifications", lazy="dynamic"))
     trip = db.relationship("Trip", backref=db.backref("trip_notifications", lazy="dynamic"))
 
@@ -469,7 +465,6 @@ class Settlement(db.Model):
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    # Relationships
     trip = db.relationship("Trip", backref=db.backref("settlements", lazy="dynamic"))
     from_user = db.relationship("User", foreign_keys=[from_user_id], backref="settlements_paid")
     to_user = db.relationship("User", foreign_keys=[to_user_id], backref="settlements_received")
@@ -513,7 +508,6 @@ class PendingInvite(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
     accepted = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Relationships
     trip = db.relationship("Trip", backref=db.backref("pending_invites", lazy="dynamic"))
     inviter = db.relationship("User", backref="sent_invites")
 
@@ -552,7 +546,6 @@ class ChatMessage(db.Model):
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    # Relationships
     trip = db.relationship("Trip", backref=db.backref("chat_messages", lazy="dynamic"))
     user = db.relationship("User", backref=db.backref("chat_messages", lazy="dynamic"))
 
@@ -589,7 +582,6 @@ class Friendship(db.Model):
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    # Relationships
     user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("sent_friendships", lazy="dynamic", cascade="all, delete"))
     friend = db.relationship("User", foreign_keys=[friend_id], backref=db.backref("received_friendships", lazy="dynamic", cascade="all, delete"))
 
@@ -601,7 +593,6 @@ class Friendship(db.Model):
             "friend_id": self.friend_id,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
-            # Include friend details if eagerly loaded
             "user": {"name": self.user.name, "email": self.user.email} if self.user else None,
             "friend": {"name": self.friend.name, "email": self.friend.email} if self.friend else None
         }

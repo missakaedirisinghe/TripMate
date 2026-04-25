@@ -39,7 +39,6 @@ export function ChatPanel({ tripId, newMessage }: ChatPanelProps) {
                 setHasMore(res.has_more);
                 setPage(1);
             } catch {
-                // Chat may not be available yet
             } finally {
                 setLoading(false);
             }
@@ -70,11 +69,14 @@ export function ChatPanel({ tripId, newMessage }: ChatPanelProps) {
         const nextPage = page + 1;
         try {
             const res = await chatApi.getMessages(tripId, nextPage);
-            setMessages(prev => [...res.messages, ...prev]);
+            setMessages(prev => {
+                const existingIds = new Set(prev.map(m => m.id));
+                const uniqueNew = res.messages.filter(m => !existingIds.has(m.id));
+                return [...uniqueNew, ...prev];
+            });
             setHasMore(res.has_more);
             setPage(nextPage);
         } catch {
-            // Ignore
         }
     }, [tripId, page, hasMore]);
 
@@ -87,12 +89,11 @@ export function ChatPanel({ tripId, newMessage }: ChatPanelProps) {
 
         try {
             const res = await chatApi.sendMessage(tripId, text);
-            // The Socket.IO event will deliver the message, but also add it optimistically
-            if (!messages.some(m => m.id === res.message.id)) {
-                setMessages(prev => [...prev, res.message]);
-            }
+            setMessages(prev => {
+                if (prev.some(m => m.id === res.message.id)) return prev;
+                return [...prev, res.message];
+            });
         } catch {
-            // Restore input on failure
             setInput(text);
         } finally {
             setSending(false);

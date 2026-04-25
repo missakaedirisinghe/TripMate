@@ -63,7 +63,6 @@ export function SettlementPanel({ tripId, currentUserId, isCreator = false, trip
             setAllSettled(debtsRes.all_settled);
             setSettlements(settlementsRes.settlements);
         } catch {
-            // Silently fail
         } finally {
             setLoading(false);
         }
@@ -86,7 +85,6 @@ export function SettlementPanel({ tripId, currentUserId, isCreator = false, trip
             setSettleNote("");
             await loadData();
         } catch {
-            // Silently fail
         } finally {
             setSettling(false);
         }
@@ -110,7 +108,6 @@ export function SettlementPanel({ tripId, currentUserId, isCreator = false, trip
     const remainingTotal = trip.budget_limit ? trip.budget_limit - totalSpent : 0;
     const hasBudget = Boolean(trip.budget_limit);
 
-    // Calculate category splits
     const categoryTotals = expenses.reduce((acc, exp) => {
         const cat = exp.category || 'Other';
         acc[cat] = (acc[cat] || 0) + exp.amount;
@@ -241,7 +238,6 @@ export function SettlementPanel({ tripId, currentUserId, isCreator = false, trip
                                     {expenses.length === 0 ? (
                                         <div className="py-8 text-center text-foreground/40 text-sm">No expenses. Adding one creates group debts automatically!</div>
                                     ) : (() => {
-                                        // Calculate who is fully settled (members who owe nothing and are not the creator)
                                         const debtorsList = new Set(debts.map(d => d.from_user_id));
                                         const fullySettledMembers = members.filter(m => !debtorsList.has(m.user_id) && m.user_id !== trip.creator_id);
                                         const settledNames = fullySettledMembers.length > 0 ? fullySettledMembers.map(m => m.user_name?.split(" ")[0]).join(", ") : null;

@@ -25,11 +25,9 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 
-# Ensure reproducible results
 SEED = 42
 np.random.seed(SEED)
 
-# Sri Lankan travel cost parameters (LKR per day, realistic 2025-2026 rates)
 ACCOMMODATION_RATES = {
     "budget":    {"mean": 3500,  "std": 800},
     "mid-range": {"mean": 9000,  "std": 2000},
@@ -66,7 +64,6 @@ def generate_dataset(n_samples=N_SAMPLES):
         vehicle = np.random.choice(VEHICLE_TYPES)
         accommodation = np.random.choice(ACCOMMODATION_TYPES)
 
-        # Calculate costs with realistic noise
         acc_rate = max(500, np.random.normal(
             ACCOMMODATION_RATES[accommodation]["mean"],
             ACCOMMODATION_RATES[accommodation]["std"],
@@ -89,7 +86,6 @@ def generate_dataset(n_samples=N_SAMPLES):
         food_cost = food_rate * duration * num_travelers
         activities_cost = activity_rate * duration
 
-        # Add a random "miscellaneous" factor (10-20% variance)
         misc_factor = np.random.uniform(0.9, 1.15)
         total_cost = (acc_cost + transport_cost + food_cost + activities_cost) * misc_factor
 
@@ -117,7 +113,6 @@ def train_model(df):
     Returns:
         Tuple of (model, feature_columns, metrics_dict).
     """
-    # One-hot encode categorical features
     df_encoded = pd.get_dummies(df, columns=["vehicle_type", "accommodation_type"], drop_first=False)
 
     feature_cols = [c for c in df_encoded.columns if c not in (

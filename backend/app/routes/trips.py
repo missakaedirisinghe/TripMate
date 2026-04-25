@@ -79,18 +79,15 @@ def create_trip(current_user):
     db.session.add(trip)
     db.session.flush()
 
-    # Add creator as owner member
     member = TripMember(trip_id=trip.id, user_id=current_user.id, role="owner")
     db.session.add(member)
     
-    # Process invited friends immediately 
     invited_friends = data.get("invited_friends", [])
     if isinstance(invited_friends, list):
         for friend_id in invited_friends:
             f_member = TripMember(trip_id=trip.id, user_id=friend_id, role="member")
             db.session.add(f_member)
             
-            # Send notification
             create_notification(
                 user_id=friend_id,
                 notification_type="invite",
@@ -102,7 +99,6 @@ def create_trip(current_user):
 
     db.session.commit()
 
-    # Pre-calculate budgets and fetch members for the return object
     return jsonify({
         "message": "Trip created",
         "trip": trip.to_dict(include_members=True, include_budget=True),
@@ -162,7 +158,6 @@ def update_trip(trip_id, current_user, membership):
 
     db.session.commit()
 
-    # Emit real-time update
     socketio.emit(
         "trip_updated",
         {"trip": trip.to_dict(include_members=True, include_budget=True)},
@@ -217,7 +212,6 @@ def remove_member(trip_id, current_user, membership, target_user_id):
     db.session.delete(target_membership)
     db.session.commit()
     
-    # Notify sockets
     socketio.emit(
         "member_removed",
         {"user_id": target_user_id, "trip_id": trip_id},
@@ -259,7 +253,6 @@ def invite_member(trip_id, current_user, membership):
     invitee = User.query.filter_by(email=email).first()
 
     if invitee:
-        # User exists — add directly
         existing = TripMember.query.filter_by(trip_id=trip_id, user_id=invitee.id).first()
         if existing:
             return jsonify({"error": "User is already a member of this trip"}), 409
@@ -267,7 +260,6 @@ def invite_member(trip_id, current_user, membership):
         member = TripMember(trip_id=trip_id, user_id=invitee.id, role=role)
         db.session.add(member)
 
-        # Create notification for the invitee
         create_notification(
             user_id=invitee.id,
             notification_type="invite",
@@ -277,7 +269,6 @@ def invite_member(trip_id, current_user, membership):
             data={"inviter_name": current_user.name, "trip_title": trip.title},
         )
 
-        # Notify existing members
         notify_trip_members(
             trip_id=trip_id,
             notification_type="member_joined",
@@ -289,7 +280,6 @@ def invite_member(trip_id, current_user, membership):
 
         db.session.commit()
 
-        # Emit real-time event
         socketio.emit(
             "member_joined",
             {"member": member.to_dict(), "trip_id": trip_id},
@@ -301,8 +291,6 @@ def invite_member(trip_id, current_user, membership):
             "member": member.to_dict(),
         }), 201
     else:
-        # User doesn't exist — send email invitation
-        # Check if invite already pending
         existing_invite = PendingInvite.query.filter_by(
             trip_id=trip_id, email=email, accepted=False
         ).first()
@@ -325,7 +313,6 @@ def invite_member(trip_id, current_user, membership):
         db.session.add(pending)
         db.session.commit()
 
-        # Send invitation email
         email_sent = send_trip_invite_email(
             mail=mail,
             to_email=email,
@@ -353,37 +340,3 @@ def list_members(trip_id, current_user, membership):
     """
     members = TripMember.query.filter_by(trip_id=trip_id).all()
     return jsonify({"members": [m.to_dict() for m in members]}), 200
-
-
-@trips_bp.route("/<trip_id>/members/<user_id>", methods=["DELETE"])
-@token_required
-@trip_member_required
-def remove_member(trip_id, current_user, membership, user_id):
-    """Remove a member from the trip. Owner/admin only.
-
-    Returns:
-        200: Member removed
-        403: Not authorized
-    """
-    if membership.role not in ("owner", "admin"):
-        return jsonify({"error": "Only owner or admin can remove members"}), 403
-
-    if user_id == current_user.id and membership.role == "owner":
-        return jsonify({"error": "Owner cannot remove themselves"}), 400
-
-    target = TripMember.query.filter_by(trip_id=trip_id, user_id=user_id).first()
-    if not target:
-        return jsonify({"error": "Member not found"}), 404
-
-    removed_name = target.user.name if target.user else "Unknown"
-    db.session.delete(target)
-    db.session.commit()
-
-    # Emit real-time event
-    socketio.emit(
-        "member_removed",
-        {"user_id": user_id, "trip_id": trip_id, "removed_name": removed_name},
-        to=f"trip_{trip_id}",
-    )
-
-    return jsonify({"message": "Member removed"}), 200

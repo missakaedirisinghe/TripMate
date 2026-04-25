@@ -30,14 +30,12 @@ def create_app(config_class=None):
     """
     app = Flask(__name__)
 
-    # Load configuration
     if config_class is None:
         from app.config import Config
         app.config.from_object(Config)
     else:
         app.config.from_object(config_class)
 
-    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -50,17 +48,12 @@ def create_app(config_class=None):
         engineio_logger=False,
     )
 
-    # Import models so Alembic can detect them
     from app import models  # noqa: F401
 
-    # Register Socket.IO event handlers
     from app.events import register_socket_events
     register_socket_events(socketio)
 
-    # ML routing and recommendations now utilize dynamic TF-IDF and greedy routing directly
-    # via the database (see app.routes.recommendations)
 
-    # --- Register Blueprints ---
 
     from app.routes.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -92,7 +85,6 @@ def create_app(config_class=None):
     from app.routes.friends import friends_bp
     app.register_blueprint(friends_bp, url_prefix="/api/friends")
 
-    # --- Health Check ---
 
     @app.route("/health")
     def health():

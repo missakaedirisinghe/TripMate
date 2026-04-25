@@ -13,7 +13,6 @@ class TestRecommendations:
             "activities": ["surfing", "hiking"],
             "bucket_list": ["Ella"],
         })
-        # In test env, model is not loaded (no .pkl file)
         assert res.status_code == 503
 
     def test_recommend_missing_activities(self, client, auth_headers):
@@ -23,7 +22,6 @@ class TestRecommendations:
             "activities": [],
             "bucket_list": [],
         })
-        # Either 400 (validation) or 503 (no model)
         assert res.status_code in (400, 503)
 
 

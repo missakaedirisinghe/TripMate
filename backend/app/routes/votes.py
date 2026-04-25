@@ -45,7 +45,6 @@ def cast_vote(trip_id, current_user, membership):
     if vote_type not in valid_types:
         return jsonify({"error": f"vote_type must be one of: {', '.join(valid_types)}"}), 400
 
-    # Check duplicate vote
     existing = Vote.query.filter_by(
         trip_id=trip_id,
         user_id=current_user.id,
@@ -65,7 +64,6 @@ def cast_vote(trip_id, current_user, membership):
     )
     db.session.add(vote)
 
-    # Notify trip members
     target_label = data.get("target_value") or target_id
     notify_trip_members(
         trip_id=trip_id,
@@ -78,7 +76,6 @@ def cast_vote(trip_id, current_user, membership):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "vote_updated",
         {"action": "vote_cast", "vote": vote.to_dict(), "user_name": current_user.name},
@@ -108,7 +105,6 @@ def get_votes(trip_id, current_user, membership):
 
     votes = query.all()
 
-    # Build tallies
     tallies = {}
     for vote in votes:
         key = f"{vote.vote_type}:{vote.target_id}"
@@ -126,7 +122,6 @@ def get_votes(trip_id, current_user, membership):
             "voter_name": vote.voter.name if vote.voter else None,
         })
 
-    # Sort by count descending
     sorted_tallies = sorted(tallies.values(), key=lambda x: x["count"], reverse=True)
 
     return jsonify({
@@ -153,7 +148,6 @@ def retract_vote(trip_id, current_user, membership, vote_id):
     db.session.delete(vote)
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "vote_updated",
         {"action": "vote_retracted", "vote_id": vote_id, "user_name": current_user.name},

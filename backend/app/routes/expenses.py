@@ -82,19 +82,16 @@ def add_expense(trip_id, current_user, membership):
 
     split_details = data.get("split_details", {})
 
-    # Auto-calculate equal split if not provided
     if split_type == "equal" and not split_details:
         members = TripMember.query.filter_by(trip_id=trip_id).all()
         per_person = round(amount / len(members), 2)
         split_details = {m.user_id: per_person for m in members}
 
-    # Validate percentage split
     if split_type == "percentage" and split_details:
         total_pct = sum(split_details.values())
         if abs(total_pct - 100) > 0.01:
             return jsonify({"error": f"Percentage splits must sum to 100 (got {total_pct})"}), 400
 
-    # Validate custom split
     if split_type == "custom" and split_details:
         total_custom = sum(split_details.values())
         if abs(total_custom - amount) > 0.01:
@@ -113,7 +110,6 @@ def add_expense(trip_id, current_user, membership):
     )
     db.session.add(expense)
 
-    # Notify trip members
     notify_trip_members(
         trip_id=trip_id,
         notification_type="expense_added",
@@ -125,7 +121,6 @@ def add_expense(trip_id, current_user, membership):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "expense_updated",
         {"action": "expense_added", "expense": expense.to_dict(), "user_name": current_user.name},
@@ -165,7 +160,6 @@ def update_expense(trip_id, current_user, membership, expense_id):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "expense_updated",
         {"action": "expense_updated", "expense": expense.to_dict(), "user_name": current_user.name},
@@ -193,7 +187,6 @@ def delete_expense(trip_id, current_user, membership, expense_id):
     db.session.delete(expense)
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "expense_updated",
         {"action": "expense_deleted", "expense_id": expense_id, "user_name": current_user.name},
@@ -219,8 +212,6 @@ def budget_summary(trip_id, current_user, membership):
     total_spent = sum(float(e.amount) for e in expenses)
     budget_limit = float(trip.budget_limit) if trip.budget_limit else None
 
-    # Calculate per-member balances
-    # Positive = owed money (paid more than share), Negative = owes money
     member_balances = {}
     for member in members:
         uid = member.user_id
@@ -233,11 +224,9 @@ def budget_summary(trip_id, current_user, membership):
         }
 
     for expense in expenses:
-        # Track what each person paid
         if expense.paid_by and expense.paid_by in member_balances:
             member_balances[expense.paid_by]["paid"] += float(expense.amount)
 
-        # Track what each person owes
         details = expense.split_details or {}
         if expense.split_type == "equal" and not details:
             per_person = float(expense.amount) / max(len(members), 1)
@@ -252,7 +241,6 @@ def budget_summary(trip_id, current_user, membership):
                 if uid in member_balances:
                     member_balances[uid]["owes"] += float(amt)
 
-    # Calculate net balance
     for uid in member_balances:
         member_balances[uid]["balance"] = round(
             member_balances[uid]["paid"] - member_balances[uid]["owes"], 2
@@ -269,7 +257,6 @@ def budget_summary(trip_id, current_user, membership):
     }), 200
 
 
-# --- Settlement Flow ---
 
 
 @expenses_bp.route("/<trip_id>/debts", methods=["GET"])
@@ -287,7 +274,6 @@ def get_debts(trip_id, current_user, membership):
     members = TripMember.query.filter_by(trip_id=trip_id).all()
     settlements = Settlement.query.filter_by(trip_id=trip_id).all()
 
-    # Build balance map
     balances = {}
     for member in members:
         balances[member.user_id] = {
@@ -314,14 +300,12 @@ def get_debts(trip_id, current_user, membership):
                 if uid in balances:
                     balances[uid]["net"] -= float(amt)
 
-    # Apply existing settlements
     for s in settlements:
         if s.from_user_id in balances:
             balances[s.from_user_id]["net"] += float(s.amount)
         if s.to_user_id in balances:
             balances[s.to_user_id]["net"] -= float(s.amount)
 
-    # Debt simplification: greedy algorithm to minimize transactions
     creditors = []  # People who are owed money (positive balance)
     debtors = []    # People who owe money (negative balance)
 
@@ -332,7 +316,6 @@ def get_debts(trip_id, current_user, membership):
         elif net < -0.01:
             debtors.append({"user_id": uid, "user_name": info["user_name"], "amount": abs(net)})
 
-    # Sort for deterministic results
     creditors.sort(key=lambda x: x["amount"], reverse=True)
     debtors.sort(key=lambda x: x["amount"], reverse=True)
 
@@ -417,7 +400,6 @@ def add_settlement(trip_id, current_user, membership):
     if amount <= 0:
         return jsonify({"error": "Amount must be positive"}), 400
 
-    # Verify target is a trip member
     target_member = TripMember.query.filter_by(trip_id=trip_id, user_id=to_user_id).first()
     if not target_member:
         return jsonify({"error": "Target user is not a member of this trip"}), 404
@@ -431,7 +413,6 @@ def add_settlement(trip_id, current_user, membership):
     )
     db.session.add(settlement)
 
-    # Notify the recipient
     create_notification(
         user_id=to_user_id,
         notification_type="settlement",
@@ -443,7 +424,6 @@ def add_settlement(trip_id, current_user, membership):
 
     db.session.commit()
 
-    # Emit real-time event
     socketio.emit(
         "settlement_recorded",
         {"settlement": settlement.to_dict(), "user_name": current_user.name},

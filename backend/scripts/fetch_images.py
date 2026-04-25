@@ -9,7 +9,6 @@ import sys
 import os
 import time
 
-# Add backend directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app import create_app, db
@@ -34,7 +33,6 @@ def get_commons_image(query):
 def fetch_images():
     app = create_app()
     with app.app_context():
-        # Update all images that are broken, DuckDuckGo proxies, Unsplash fallbacks, or null
         dests = Destination.query.filter(
             (Destination.image_url.like('%unsplash.com%')) | 
             (Destination.image_url.like('%bing.com%')) |

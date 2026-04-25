@@ -43,7 +43,6 @@ export function WeatherPanel({ destination, days }: WeatherPanelProps) {
         setLoading(true);
         setError(null);
 
-        // Extract multiple cities handling commas
         const cities = destination.split(",").map(c => c.trim()).filter(Boolean);
 
         const fetchCityWeather = async (city: string) => {
@@ -118,7 +117,6 @@ export function WeatherPanel({ destination, days }: WeatherPanelProps) {
                         const cities = destination.split(",").map(c => c.trim()).filter(Boolean);
                         let currentCity = cities[0] || "Unknown";
                         
-                        // Group days into contiguous city blocks
                         const blocks: { city: string, days: any[] }[] = [];
 
                         days.forEach((day) => {
@@ -142,7 +140,6 @@ export function WeatherPanel({ destination, days }: WeatherPanelProps) {
                         });
 
                         return blocks.map((block, bIdx) => {
-                            // Find start/end dates for this structural block if available
                             const firstDay = block.days[0];
                             const lastDay = block.days[block.days.length - 1];
                             let dateRangeStr = "";
@@ -170,14 +167,12 @@ export function WeatherPanel({ destination, days }: WeatherPanelProps) {
                                             const forecasts = cityForecasts[block.city.toLowerCase()] || [];
                                             const dailyForecasts = getDailyForecasts(forecasts);
                                             
-                                            // Pick the forecast by exact date if possible, else just use the global i-th day
                                             let f = dailyForecasts[i];
                                             if (day.date) {
                                                 const matched = dailyForecasts.find(df => df.datetime.startsWith(day.date));
                                                 if (matched) f = matched;
                                             }
 
-                                            // Fallback to last known forecast if trip exceeds 5 days
                                             if (!f) f = dailyForecasts[dailyForecasts.length - 1] || forecasts[0];
                                             
                                             if (!f) return null;

@@ -69,7 +69,6 @@ def get_weather(destination, current_user):
 
         data = response.json()
 
-        # Simplify the response for frontend
         forecasts = []
         for item in data.get("list", []):
             forecasts.append({

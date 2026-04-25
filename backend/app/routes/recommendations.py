@@ -7,6 +7,7 @@ using dynamic TF-IDF and greedy pathfinding, along with ML-based cost estimation
 
 import math
 import os
+import random
 import traceback
 
 import joblib
@@ -20,7 +21,6 @@ from app.models import Destination
 
 recommendations_bp = Blueprint("recommendations", __name__)
 
-# --- Cost Model Lazy Loading ---
 _cost_model_cache = {}
 
 
@@ -78,7 +78,6 @@ def calculate_greedy_route(places):
     if not places:
         return []
 
-    # Start at the first place (or we could start at the most popular)
     unvisited = places.copy()
     current_place = unvisited.pop(0)
     route = [current_place]
@@ -101,6 +100,48 @@ def calculate_greedy_route(places):
 
     return route
 
+
+def _estimate_route_cost(route, duration_days):
+    """Estimate trip cost based on actual route characteristics.
+
+    Computes a per-plan cost using:
+    - Transport: Total haversine distance × LKR 30/km (avg fuel + vehicle)
+    - Activities: Number of unique activity stops × LKR 2,500 avg entry/cost
+    - Accommodation: duration × LKR 8,000/night (mid-range avg)
+    - Food: duration × LKR 5,000/day (3 meals)
+
+    Returns:
+        float: Estimated total trip cost in LKR.
+    """
+    skip_categories = {"food", "accommodation", "transport"}
+
+    seen = set()
+    activity_stops = []
+    for stop in route:
+        cat = stop.get("category", "")
+        if cat in skip_categories:
+            continue
+        name = (stop.get("name") or "").lower()
+        if name and name not in seen:
+            seen.add(name)
+            activity_stops.append(stop)
+
+    total_km = 0.0
+    for i in range(1, len(activity_stops)):
+        prev = activity_stops[i - 1]
+        curr = activity_stops[i]
+        if prev.get("lat") and prev.get("lng") and curr.get("lat") and curr.get("lng"):
+            total_km += haversine(prev["lat"], prev["lng"], curr["lat"], curr["lng"])
+
+    transport_cost = total_km * 30  # LKR 30/km average
+    activity_cost = len(activity_stops) * 2500  # LKR 2,500 per stop
+    accommodation_cost = duration_days * 8000  # LKR 8,000/night
+    food_cost = duration_days * 5000  # LKR 5,000/day
+
+    total = transport_cost + activity_cost + accommodation_cost + food_cost
+    return round(total, 2)
+
+
 def _build_daily_schedule(day_num, places_today, current_accommodation, all_dests, is_first_day=False):
     """
     Transforms a list of destinations into a fully scheduled day with meals 
@@ -113,13 +154,11 @@ def _build_daily_schedule(day_num, places_today, current_accommodation, all_dest
     start_place = places_today[0]
     end_place = places_today[-1]
     
-    # 1. MORNING (Breakfast)
     if current_accommodation:
         b_place = dict(current_accommodation.to_dict()) if hasattr(current_accommodation, "to_dict") else dict(current_accommodation)
         b_place["title"] = f"Breakfast at {b_place['name']}"
         b_place["category"] = "food"
         b_place["day"] = day_num
-        # Use hotel's image if available, else a good breakfast fallback
         b_place["image_url"] = b_place.get("image_url") or "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=800&q=80"
         schedule.append(b_place)
     elif is_first_day:
@@ -130,25 +169,30 @@ def _build_daily_schedule(day_num, places_today, current_accommodation, all_dest
         b_place["image_url"] = "https://images.unsplash.com/photo-1525648199074-cee30ba79a4a?w=800&q=80"
         schedule.append(b_place)
 
-    # 2. MID-DAY (Activities + Lunch)
     mid_index = max(1, len(places_today) // 2)
+    seen_in_day = set()  # Prevent same destination appearing twice in a single day
     
     for i, place in enumerate(places_today):
+        place_name = place.get("name", "").lower()
         p = dict(place)
         p["day"] = day_num
         if "category" not in p or p["category"] != "accommodation":
-            schedule.append(p)
+            if place_name not in seen_in_day:
+                schedule.append(p)
+                seen_in_day.add(place_name)
             
         if i == mid_index - 1:
-            # We inject lunch immediately after the mid-point activity
-            lunch = dict(place)
-            lunch["title"] = f"Lunch break near {place['name']}"
-            lunch["category"] = "food"
-            lunch["day"] = day_num
-            lunch["image_url"] = "https://images.unsplash.com/photo-1564671165093-20688ff1fffa?w=800&q=80"
+            lunch = {
+                "name": place.get("name", "Local Area"),
+                "title": f"Lunch break near {place.get('name', 'Local Area')}",
+                "category": "food",
+                "day": day_num,
+                "lat": place.get("lat"),
+                "lng": place.get("lng"),
+                "image_url": "https://images.unsplash.com/photo-1564671165093-20688ff1fffa?w=800&q=80",
+            }
             schedule.append(lunch)
             
-    # 3. END OF DAY (Dinner & Accommodation)
     dist_to_current = float("inf")
     if current_accommodation:
         if hasattr(current_accommodation, "lat"):
@@ -160,12 +204,10 @@ def _build_daily_schedule(day_num, places_today, current_accommodation, all_dest
         dist_to_current = haversine(end_place["lat"], end_place["lng"], acc_lat, acc_lng)
         
     if not current_accommodation or dist_to_current > 5:
-        # Find new accommodation near final stop
         new_acc = _find_accommodation(all_dests, end_place["lat"], end_place["lng"])
         if new_acc:
             current_accommodation = new_acc
             
-        # Dinner out (since we have completely left the old hotel's area)
         dinner = dict(end_place)
         dinner["title"] = f"Dinner near {end_place['name']}"
         dinner["category"] = "food"
@@ -173,7 +215,6 @@ def _build_daily_schedule(day_num, places_today, current_accommodation, all_dest
         dinner["image_url"] = "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80"
         schedule.append(dinner)
         
-        # Check-in
         if current_accommodation:
             acc_c = dict(current_accommodation.to_dict()) if hasattr(current_accommodation, "to_dict") else dict(current_accommodation)
             acc_c["title"] = f"Check-in at {acc_c['name']}"
@@ -183,14 +224,12 @@ def _build_daily_schedule(day_num, places_today, current_accommodation, all_dest
     else:
         acc_dict = dict(current_accommodation.to_dict()) if hasattr(current_accommodation, "to_dict") else dict(current_accommodation)
         
-        # Transit back
         transit = dict(acc_dict)
         transit["title"] = f"Return to {acc_dict['name']}"
         transit["category"] = "transport"
         transit["day"] = day_num
         schedule.append(transit)
         
-        # Dinner at hotel
         dinner = dict(acc_dict)
         dinner["title"] = f"Dinner at {acc_dict['name']}"
         dinner["category"] = "food"
@@ -235,7 +274,6 @@ def recommend(current_user):
         return jsonify({"error": "At least one activity is required"}), 400
 
     try:
-        # 1. Fetch all destinations from DB
         all_dests = Destination.query.all()
         if not all_dests:
             return jsonify({
@@ -243,7 +281,6 @@ def recommend(current_user):
                 "hint": "Run seed_destinations.py to seed the database."
             }), 503
 
-        # 2. Build TF-IDF matrix for activity matching
         corpus = [" ".join(d.activities) if d.activities else "" for d in all_dests]
         user_query = " ".join(activities)
 
@@ -252,242 +289,269 @@ def recommend(current_user):
         user_tfidf = vectorizer.transform([user_query])
         similarities = cosine_similarity(user_tfidf, tfidf_matrix).flatten()
 
-        # Build a lookup dict for all destinations
         dest_by_name = {}
         for d in all_dests:
             dest_by_name[d.name.lower()] = d
 
-        # 3. Multi-destination planning with sequential transit
         if destination_days:
-            route_with_days = []
-            current_day = 1
-            current_accommodation = None
-            
-            # Since Python 3.7+ preserves dict insertion order, this represents the user's route linearly
-            anchor_sequence = list(destination_days.items())
-            
-            for i, (dest_name, num_days) in enumerate(anchor_sequence):
-                anchor = dest_by_name.get(dest_name.lower())
-                if not anchor:
-                    # Fallback if anchor not found, skip allocation or just increment days
-                    current_day += num_days
-                    continue
-                
-                anchor_dict = anchor.to_dict()
-                
-                # Determine how many days are exploration vs transit
-                is_first_anchor = (i == 0)
-                
-                if is_first_anchor:
-                    transit_days = 0
-                    explorer_days = num_days
-                else:
-                    transit_days = 1
-                    explorer_days = max(0, num_days - 1)
-                
-                stops_per_day = 3  # Target ~3 activities per day
-                
-                # --- PHASE A: Transit Day (If applicable) ---
-                if transit_days > 0:
-                    prev_anchor_name = anchor_sequence[i - 1][0]
-                    prev_anchor = dest_by_name.get(prev_anchor_name.lower())
-                    
-                    if prev_anchor:
-                        # Find stops physically between Prev and Current using an elliptical bounding box
-                        dist_a_b = haversine(prev_anchor.lat, prev_anchor.lng, anchor.lat, anchor.lng)
-                        
-                        transit_candidates = []
-                        for j, dest in enumerate(all_dests):
-                            # Skip the anchors themselves
-                            if dest.name.lower() in [prev_anchor.name.lower(), anchor.name.lower()]:
-                                continue
-                            
-                            dist_from_prev = haversine(prev_anchor.lat, prev_anchor.lng, dest.lat, dest.lng)
-                            dist_to_curr = haversine(dest.lat, dest.lng, anchor.lat, anchor.lng)
-                            
-                            # Ellipse bound: distance sum must be <= direct distance * 1.5 multiplier (adjustable)
-                            if dist_from_prev + dist_to_curr <= dist_a_b * 1.5:
-                                base_score = similarities[j]
-                                if base_score > 0:
-                                    rating_multi = 1.0 + ((dest.rating or 0) / 10.0)
-                                    # Store candidate: (final_score, distance_from_start, destination)
-                                    transit_candidates.append((base_score * rating_multi, dist_from_prev, dest))
-                                    
-                        # Sort by TF-IDF score to get the best rated stops
-                        transit_candidates.sort(key=lambda x: x[0], reverse=True)
-                        top_transit = transit_candidates[:stops_per_day]
-                        
-                        # Sort the top stops strictly geographically by distance from previous anchor 
-                        # to naturally progress towards the destination
-                        top_transit.sort(key=lambda x: x[1])
-                        
-                        # We must apply the daily builder algorithm for the transit day
-                        transit_places_list = [stop.to_dict() for _, _, stop in top_transit]
-                        # Don't natively add the anchor yet
-                        arrive_dict = dict(anchor_dict)
-                        arrive_dict["title"] = f"Arrive in {anchor.name}"
-                        transit_places_list.append(arrive_dict)
-                        
-                        schedule_d1, current_accommodation = _build_daily_schedule(
-                            day_num=current_day,
-                            places_today=transit_places_list,
-                            current_accommodation=current_accommodation,
-                            all_dests=all_dests,
-                            is_first_day=(current_day == 1)
-                        )
-                        route_with_days.extend(schedule_d1)
-                        
-                    current_day += transit_days
+            def _generate_multi_plan(all_dests, similarities, destination_days, dest_by_name, noise_factor=0.0):
+                """Generate one multi-destination plan variant.
 
-                # --- PHASE B: Explorer Days ---
-                if explorer_days > 0:
-                    explorer_scored = []
-                    for j, dest in enumerate(all_dests):
-                        if dest.name.lower() == anchor.name.lower():
-                            continue
-                        dist = haversine(anchor.lat, anchor.lng, dest.lat, dest.lng)
-                        if dist > 60:
-                            continue
-                        base_score = similarities[j]
-                        if base_score > 0:
-                            rating_multi = 1.0 + ((dest.rating or 0) / 10.0)
-                            explorer_scored.append((base_score * rating_multi, dest))
-                            
-                    explorer_scored.sort(key=lambda x: x[0], reverse=True)
-                    
-                    max_stops = explorer_days * stops_per_day
-                    stops = [anchor_dict] if is_first_anchor and not any(r['name'] == anchor_dict['name'] for r in route_with_days) else []
-                    for _, dest in explorer_scored[:max_stops]:
-                        stops.append(dest.to_dict())
-                        
-                    # Optimize the localized cluster using greedy routing
-                    optimized = calculate_greedy_route(stops) if len(stops) > 1 else stops
-                    
-                    # Distribute these stops sequentially across the explorer days
-                    days_array = [[] for _ in range(explorer_days)]
-                    stops_per_bin = max(1, math.ceil(len(optimized) / max(explorer_days, 1)))
-                    for idx, place in enumerate(optimized):
-                        bin_idx = min(idx // stops_per_bin, explorer_days - 1)
-                        days_array[bin_idx].append(place)
-                        
-                    for day_offset in range(explorer_days):
-                        day_num = current_day + day_offset
-                        places_today = days_array[day_offset]
-                        
-                        if places_today:
-                            schedule_dx, current_accommodation = _build_daily_schedule(
-                                day_num=day_num,
-                                places_today=places_today,
+                Args:
+                    noise_factor: Controls scoring randomness (0.0 = deterministic,
+                        higher = more diverse). Applied to both transit and explorer
+                        candidate scoring so each plan variant selects different stops.
+                """
+                route_with_days = []
+                current_day = 1
+                current_accommodation = None
+                used_destination_names = set()  # Global dedup across all phases
+
+                anchor_sequence = list(destination_days.items())
+
+                for i, (dest_name, num_days) in enumerate(anchor_sequence):
+                    anchor = dest_by_name.get(dest_name.lower())
+                    if not anchor:
+                        current_day += num_days
+                        continue
+
+                    anchor_dict = anchor.to_dict()
+                    is_first_anchor = (i == 0)
+
+                    if is_first_anchor:
+                        transit_days = 0
+                        explorer_days = num_days
+                    else:
+                        transit_days = 1
+                        explorer_days = max(0, num_days - 1)
+
+                    stops_per_day = 3
+
+                    if transit_days > 0:
+                        prev_anchor_name = anchor_sequence[i - 1][0]
+                        prev_anchor = dest_by_name.get(prev_anchor_name.lower())
+
+                        if prev_anchor:
+                            dist_a_b = haversine(prev_anchor.lat, prev_anchor.lng, anchor.lat, anchor.lng)
+
+                            transit_candidates = []
+                            for j, dest in enumerate(all_dests):
+                                if dest.name.lower() in [prev_anchor.name.lower(), anchor.name.lower()]:
+                                    continue
+                                if dest.name.lower() in used_destination_names:
+                                    continue
+
+                                dist_from_prev = haversine(prev_anchor.lat, prev_anchor.lng, dest.lat, dest.lng)
+                                dist_to_curr = haversine(dest.lat, dest.lng, anchor.lat, anchor.lng)
+
+                                if dist_from_prev + dist_to_curr <= dist_a_b * 1.5:
+                                    base_score = similarities[j]
+                                    if base_score > 0:
+                                        rating_multi = 1.0 + ((dest.rating or 0) / 10.0)
+                                        noise = random.uniform(-noise_factor, noise_factor) * base_score
+                                        transit_candidates.append(((base_score + noise) * rating_multi, dist_from_prev, dest))
+
+                            transit_candidates.sort(key=lambda x: x[0], reverse=True)
+                            top_transit = transit_candidates[:stops_per_day]
+                            top_transit.sort(key=lambda x: x[1])
+
+                            transit_places_list = [stop.to_dict() for _, _, stop in top_transit]
+                            for _, _, stop in top_transit:
+                                used_destination_names.add(stop.name.lower())
+
+                            arrive_dict = dict(anchor_dict)
+                            arrive_dict["title"] = f"Arrive in {anchor.name}"
+                            transit_places_list.append(arrive_dict)
+
+                            schedule_d1, current_accommodation = _build_daily_schedule(
+                                day_num=current_day,
+                                places_today=transit_places_list,
                                 current_accommodation=current_accommodation,
                                 all_dests=all_dests,
-                                is_first_day=(day_num == 1)
+                                is_first_day=(current_day == 1)
                             )
-                            route_with_days.extend(schedule_dx)
-                            
-                    current_day += explorer_days
+                            route_with_days.extend(schedule_d1)
+
+                        current_day += transit_days
+
+                    if explorer_days > 0:
+                        explorer_scored = []
+                        for j, dest in enumerate(all_dests):
+                            if dest.name.lower() == anchor.name.lower():
+                                continue
+                            if dest.name.lower() in used_destination_names:
+                                continue
+                            dist = haversine(anchor.lat, anchor.lng, dest.lat, dest.lng)
+                            if dist > 60:
+                                continue
+                            base_score = similarities[j]
+                            if base_score > 0:
+                                rating_multi = 1.0 + ((dest.rating or 0) / 10.0)
+                                noise = random.uniform(-noise_factor, noise_factor) * base_score
+                                explorer_scored.append(((base_score + noise) * rating_multi, dest))
+
+                        explorer_scored.sort(key=lambda x: x[0], reverse=True)
+
+                        max_stops = explorer_days * stops_per_day
+                        stops = [anchor_dict] if is_first_anchor and not any(r['name'] == anchor_dict['name'] for r in route_with_days) else []
+                        for _, dest in explorer_scored[:max_stops]:
+                            stops.append(dest.to_dict())
+                            used_destination_names.add(dest.name.lower())
+
+                        optimized = calculate_greedy_route(stops) if len(stops) > 1 else stops
+
+                        days_array = [[] for _ in range(explorer_days)]
+                        stops_per_bin = max(1, math.ceil(len(optimized) / max(explorer_days, 1)))
+                        for idx, place in enumerate(optimized):
+                            bin_idx = min(idx // stops_per_bin, explorer_days - 1)
+                            days_array[bin_idx].append(place)
+
+                        for day_offset in range(explorer_days):
+                            day_num = current_day + day_offset
+                            places_today = days_array[day_offset]
+
+                            if places_today:
+                                schedule_dx, current_accommodation = _build_daily_schedule(
+                                    day_num=day_num,
+                                    places_today=places_today,
+                                    current_accommodation=current_accommodation,
+                                    all_dests=all_dests,
+                                    is_first_day=(day_num == 1)
+                                )
+                                route_with_days.extend(schedule_dx)
+
+                        current_day += explorer_days
+
+                return route_with_days
+
+            plan_labels = ["Balanced", "Adventurous", "Off the Beaten Path"]
+            noise_levels = [0.0, 0.5, 1.0]
+            plans = []
+            total_duration = sum(destination_days.values())
+            for label, noise in zip(plan_labels, noise_levels):
+                route = _generate_multi_plan(all_dests, similarities, destination_days, dest_by_name, noise_factor=noise)
+                plans.append({
+                    "label": label,
+                    "recommended_route": route,
+                    "route_count": len(route),
+                    "estimated_cost": _estimate_route_cost(route, total_duration),
+                })
 
             return jsonify({
-                "recommended_route": route_with_days,
-                "route_count": len(route_with_days),
+                "plans": plans,
+                "recommended_route": plans[0]["recommended_route"],  # backward compat
+                "route_count": plans[0]["route_count"],
                 "input_activities": activities,
                 "input_bucket_list": bucket_list,
                 "multi_destination": True,
             }), 200
 
-        # 4. Single-destination flow (original behavior with accommodation injection)
-        selected_places = []
-        selected_names = set()
-        bucket_list_lower = [b.lower() for b in bucket_list]
-        anchor_lat = None
-        anchor_lng = None
+        def _generate_single_plan(all_dests, similarities, bucket_list, max_budget, duration_days, noise_factor=0.0):
+            """Generate one plan variant. noise_factor controls scoring randomness (0.0 = deterministic)."""
+            selected_places = []
+            selected_names = set()
+            bucket_list_lower = [b.lower() for b in bucket_list]
+            anchor_lat = None
+            anchor_lng = None
 
-        for dest in all_dests:
-            if dest.name.lower() in bucket_list_lower:
-                selected_places.append(dest.to_dict())
-                selected_names.add(dest.name.lower())
-                if anchor_lat is None:
-                    anchor_lat = dest.lat
-                    anchor_lng = dest.lng
+            for dest in all_dests:
+                if dest.name.lower() in bucket_list_lower:
+                    selected_places.append(dest.to_dict())
+                    selected_names.add(dest.name.lower())
+                    if anchor_lat is None:
+                        anchor_lat = dest.lat
+                        anchor_lng = dest.lng
 
-        # Score destinations via TF-IDF
-        scored_dests = []
-        for i, dest in enumerate(all_dests):
-            if dest.name.lower() in selected_names:
-                continue
-
-            if anchor_lat is not None and anchor_lng is not None:
-                dist = haversine(anchor_lat, anchor_lng, dest.lat, dest.lng)
-                if dist > 80:
+            scored_dests = []
+            for i, dest in enumerate(all_dests):
+                if dest.name.lower() in selected_names:
                     continue
 
-            base_score = similarities[i]
-            if base_score > 0:
-                rating_multiplier = 1.0 + ((dest.rating or 0) / 10.0)
-                final_score = base_score * rating_multiplier
-                scored_dests.append((final_score, dest))
+                if anchor_lat is not None and anchor_lng is not None:
+                    dist = haversine(anchor_lat, anchor_lng, dest.lat, dest.lng)
+                    if dist > 80:
+                        continue
 
-        scored_dests.sort(key=lambda x: x[0], reverse=True)
+                base_score = similarities[i]
+                if base_score > 0:
+                    rating_multiplier = 1.0 + ((dest.rating or 0) / 10.0)
+                    noise = random.uniform(-noise_factor, noise_factor) * base_score
+                    final_score = (base_score + noise) * rating_multiplier
+                    scored_dests.append((final_score, dest))
 
-        # Budget constraint
-        max_additional = 10 - len(selected_places)
-        if max_budget is not None:
-            try:
-                max_budget_float = float(max_budget)
-                base_daily_cost = 8000 + 5000 + (2500 * 2)
-                base_trip_cost = base_daily_cost * duration_days
-                remaining_budget = max_budget_float - base_trip_cost
-                if remaining_budget <= 0:
-                    max_additional = 0
-                else:
-                    affordable_stops = int(remaining_budget / 4000)
-                    max_additional = min(max_additional, affordable_stops)
-            except (ValueError, TypeError):
-                pass
+            scored_dests.sort(key=lambda x: x[0], reverse=True)
 
-        max_additional = max(0, max_additional)
+            max_additional = 10 - len(selected_places)
+            if max_budget is not None:
+                try:
+                    max_budget_float = float(max_budget)
+                    base_daily_cost = 8000 + 5000 + (2500 * 2)
+                    base_trip_cost = base_daily_cost * duration_days
+                    remaining_budget = max_budget_float - base_trip_cost
+                    if remaining_budget <= 0:
+                        max_additional = 0
+                    else:
+                        affordable_stops = int(remaining_budget / 4000)
+                        max_additional = min(max_additional, affordable_stops)
+                except (ValueError, TypeError):
+                    pass
 
-        for _, dest in scored_dests[:max_additional]:
-            selected_places.append(dest.to_dict())
+            max_additional = max(0, max_additional)
 
-        # Route Optimization
-        optimized_route = calculate_greedy_route(selected_places)
+            for _, dest in scored_dests[:max_additional]:
+                selected_places.append(dest.to_dict())
 
-        # Inject accommodation + day assignments properly using _build_daily_schedule
-        final_route = []
-        stops_per_day = max(1, math.ceil(len(optimized_route) / duration_days))
-        stop_idx = 0
+            optimized_route = calculate_greedy_route(selected_places)
 
-        current_accommodation = None
+            final_route = []
+            stops_per_day = max(1, math.ceil(len(optimized_route) / duration_days))
+            stop_idx = 0
 
-        for day_num in range(1, duration_days + 1):
-            places_today = []
-            for _ in range(stops_per_day):
-                if stop_idx >= len(optimized_route):
-                    break
-                place = dict(optimized_route[stop_idx])
-                
-                # Apply nice title
-                if anchor_lat and abs(place.get("lat", 0) - anchor_lat) < 0.001 and abs(place.get("lng", 0) - anchor_lng) < 0.001:
-                    place["title"] = f"Arrive in {place['name']}"
-                else:
-                    place["title"] = f"Explore {place['name']}"
+            current_accommodation = None
+
+            for day_num in range(1, duration_days + 1):
+                places_today = []
+                for _ in range(stops_per_day):
+                    if stop_idx >= len(optimized_route):
+                        break
+                    place = dict(optimized_route[stop_idx])
                     
-                places_today.append(place)
-                stop_idx += 1
+                    if anchor_lat and abs(place.get("lat", 0) - anchor_lat) < 0.001 and abs(place.get("lng", 0) - anchor_lng) < 0.001:
+                        place["title"] = f"Arrive in {place['name']}"
+                    else:
+                        place["title"] = f"Explore {place['name']}"
+                        
+                    places_today.append(place)
+                    stop_idx += 1
 
-            if places_today:
-                schedule_dx, current_accommodation = _build_daily_schedule(
-                    day_num=day_num,
-                    places_today=places_today,
-                    current_accommodation=current_accommodation,
-                    all_dests=all_dests,
-                    is_first_day=(day_num == 1)
-                )
-                final_route.extend(schedule_dx)
+                if places_today:
+                    schedule_dx, current_accommodation = _build_daily_schedule(
+                        day_num=day_num,
+                        places_today=places_today,
+                        current_accommodation=current_accommodation,
+                        all_dests=all_dests,
+                        is_first_day=(day_num == 1)
+                    )
+                    final_route.extend(schedule_dx)
+
+            return final_route
+
+        plan_labels = ["Balanced", "Adventurous", "Off the Beaten Path"]
+        noise_levels = [0.0, 0.35, 0.7]
+        plans = []
+        for idx, (label, noise) in enumerate(zip(plan_labels, noise_levels)):
+            route = _generate_single_plan(all_dests, similarities, bucket_list, max_budget, duration_days, noise_factor=noise)
+            plans.append({
+                "label": label,
+                "recommended_route": route,
+                "route_count": len(route),
+                "estimated_cost": _estimate_route_cost(route, duration_days),
+            })
 
         return jsonify({
-            "recommended_route": final_route,
-            "route_count": len(final_route),
+            "plans": plans,
+            "recommended_route": plans[0]["recommended_route"],  # backward compat
+            "route_count": plans[0]["route_count"],
             "input_activities": activities,
             "input_bucket_list": bucket_list,
         }), 200
@@ -549,7 +613,6 @@ def estimate_cost(current_user):
     vehicle_type = data.get("vehicle_type", "car")
     accommodation = data.get("accommodation_type", "mid-range")
 
-    # Try ML model first
     model_data = _load_cost_model(current_app)
 
     if model_data and "model" in model_data:
@@ -559,7 +622,6 @@ def estimate_cost(current_user):
             all_vehicle_types = model_data.get("vehicle_types", ["car", "van", "bus", "train"])
             all_acc_types = model_data.get("accommodation_types", ["budget", "mid-range", "luxury"])
 
-            # Build feature vector
             features = {}
             features["duration_days"] = duration
             features["num_travelers"] = num_travelers
@@ -569,12 +631,10 @@ def estimate_cost(current_user):
             for at in all_acc_types:
                 features[f"accommodation_type_{at}"] = 1 if accommodation == at else 0
 
-            # Create feature array in correct order
             feature_vector = np.array([[features.get(col, 0) for col in feature_cols]])
             total_prediction = float(model.predict(feature_vector)[0])
             total_prediction = max(total_prediction, 0)
 
-            # Derive per-category breakdown using domain-knowledge proportions
             accommodation_rates = {"budget": 0.18, "mid-range": 0.30, "luxury": 0.45}
             transport_rates = {"car": 0.22, "van": 0.28, "bus": 0.10, "train": 0.08}
             acc_pct = accommodation_rates.get(accommodation, 0.30)
@@ -611,7 +671,6 @@ def estimate_cost(current_user):
         except Exception as e:
             current_app.logger.error(f"ML cost estimation failed, falling back to heuristic: {e}")
 
-    # Fallback: heuristic estimation
     accommodation_rates = {
         "budget": 3000,
         "mid-range": 8000,

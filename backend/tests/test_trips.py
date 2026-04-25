@@ -51,13 +51,11 @@ class TestTripMembers:
         owner_headers = auth_headers(name="Owner", email="owner@example.com")
         auth_headers(name="Invitee", email="invitee@example.com")
 
-        # Create trip
         res = client.post("/api/trips", headers=owner_headers, json={
             "title": "Group Trip", "destination": "Mirissa"
         })
         trip_id = res.get_json()["trip"]["id"]
 
-        # Invite
         res = client.post(f"/api/trips/{trip_id}/invite", headers=owner_headers, json={
             "email": "invitee@example.com"
         })
